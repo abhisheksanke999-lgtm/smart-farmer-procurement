@@ -84,6 +84,13 @@ async function renderApp() {
           ${renderAuthModal()}
         </main>
       `;
+      // Clear inputs to defeat browser password manager autofill
+      setTimeout(() => {
+        const em = document.getElementById("login-email");
+        const pw = document.getElementById("login-password");
+        if (em) em.value = "";
+        if (pw) pw.value = "";
+      }, 50);
     } else {
       let mainContent = '';
       if (user.role === 'FARMER') {
@@ -511,15 +518,15 @@ function renderAuthModal() {
 
       ${authMode === 'login' ? `
         <!-- LOGIN FORM -->
-        <form onsubmit="handleAuthLoginSubmit(event)" class="space-y-4 text-xs">
+        <form onsubmit="handleAuthLoginSubmit(event)" autocomplete="off" class="space-y-4 text-xs">
           <div>
             <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
-            <input type="email" id="login-email" placeholder="name@example.com" value="" autocomplete="email" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <input type="email" id="login-email" name="account_email" placeholder="name@example.com" value="" autocomplete="off" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
 
           <div>
             <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Password</label>
-            <input type="password" id="login-password" placeholder="Enter your password" value="" autocomplete="current-password" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <input type="password" id="login-password" name="account_secret" placeholder="Enter your password" value="" autocomplete="new-password" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
 
           <button type="submit" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
