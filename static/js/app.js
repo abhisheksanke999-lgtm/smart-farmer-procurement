@@ -503,9 +503,10 @@ function renderAuthModal() {
       <div class="mb-5 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-slate-300">
         <span class="block text-[10px] uppercase text-slate-400 font-extrabold mb-1">⚡ Instant Demo Login Shortcuts:</span>
         <div class="grid grid-cols-3 gap-1 text-center">
-          <button onclick="fillDemoLogin('admin@smartfarmer.gov.in', 'AdminPass@123')" class="px-1.5 py-1 rounded bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 transition">
+          <button onclick="fillDemoLogin('abhisheksanke999@gmail.com', 'AdminPass@123')" class="px-1.5 py-1 rounded bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 transition">
             Admin
           </button>
+
 
           <button onclick="fillDemoLogin('ramu.farmer@example.com', 'FarmerPass@123')" class="px-1.5 py-1 rounded bg-emerald-600 text-white font-bold hover:bg-emerald-500 transition">
             Farmer

@@ -65,8 +65,16 @@ def build_user_dict(user: User) -> dict:
 
 @router.post("/login", response_model=TokenResponse)
 def login(login_data: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == login_data.email.lower()).first()
-    if not user or not verify_password(login_data.password, user.password_hash):
+    email_clean = login_data.email.strip().lower()
+    user = db.query(User).filter(User.email == email_clean).first()
+    
+    # Support admin email aliases (both abhisheksanke999@gmail.com and admin@smartfarmer.gov.in)
+    if not user and email_clean in ["admin@smartfarmer.gov.in", "abhisheksanke999@gmail.com"]:
+        alt_email = "admin@smartfarmer.gov.in" if email_clean == "abhisheksanke999@gmail.com" else "abhisheksanke999@gmail.com"
+        user = db.query(User).filter(User.email == alt_email, User.role == UserRole.ADMIN).first()
+        
+    pwd = login_data.password
+    if not user or not (verify_password(pwd, user.password_hash) or verify_password(pwd.strip(), user.password_hash)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
@@ -94,6 +102,10 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
 
     # Check if user already exists
     existing = db.query(User).filter(User.email == email).first()
+    if not existing and email in ["admin@smartfarmer.gov.in", "abhisheksanke999@gmail.com"]:
+        alt_email = "admin@smartfarmer.gov.in" if email == "abhisheksanke999@gmail.com" else "abhisheksanke999@gmail.com"
+        existing = db.query(User).filter(User.email == alt_email, User.role == UserRole.ADMIN).first()
+
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

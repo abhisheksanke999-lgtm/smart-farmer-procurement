@@ -77,7 +77,39 @@ def send_otp_email(to_email: str, recipient_name: str, otp_code: str) -> dict:
     print(f"Validity: 5 Minutes | Stored as Salted Cryptographic Hash")
     print("=" * 60)
 
-    # 1. PRIORITY: Resend HTTP REST API (Bypasses all cloud port blocks over HTTPS port 443)
+    # 1. PRIORITY: Real Gmail SMTP (Delivers to EACH AND EVERY email in the world)
+    has_real_smtp = (
+        bool(SMTP_SERVER and SMTP_USERNAME and SMTP_PASSWORD) and
+        not any(placeholder in SMTP_USERNAME.lower() for placeholder in ["your_email", "example.com", "your_username"]) and
+        not any(placeholder in SMTP_PASSWORD.lower() for placeholder in ["your_app_password", "your_password"])
+    )
+
+    if has_real_smtp:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = SMTP_FROM
+            msg["To"] = to_email
+
+            part1 = MIMEText(plain_body, "plain")
+            part2 = MIMEText(html_body, "html")
+            msg.attach(part1)
+            msg.attach(part2)
+
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=8)
+            if SMTP_USE_TLS:
+                server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.sendmail(SMTP_FROM, [to_email], msg.as_string())
+            server.quit()
+
+            print(f"[SMTP] Real email sent successfully to {to_email}")
+            return {"status": "sent", "mode": "smtp", "recipient": to_email}
+        except Exception as e:
+            logger.error(f"SMTP dispatch failed: {e}. Checking Resend fallback...")
+            print(f"[SMTP WARNING] SMTP dispatch failed ({e}). Checking Resend fallback...")
+
+    # 2. Resend HTTP REST API (Fallback for cloud environments where port 587 is blocked)
     resend_key = RESEND_API_KEY or os.environ.get("RESEND_API_KEY", "")
     if resend_key and resend_key.startswith("re_"):
         try:
@@ -108,49 +140,12 @@ def send_otp_email(to_email: str, recipient_name: str, otp_code: str) -> dict:
             logger.error(f"Resend HTTP API exception: {e}")
             print(f"[RESEND EXCEPTION] {e}")
 
-    # 2. SECONDARY: Standard SMTP
-    has_real_smtp = (
-        bool(SMTP_SERVER and SMTP_USERNAME and SMTP_PASSWORD) and
-        not any(placeholder in SMTP_USERNAME.lower() for placeholder in ["your_email", "example.com", "your_username"]) and
-        not any(placeholder in SMTP_PASSWORD.lower() for placeholder in ["your_app_password", "your_password"])
-    )
+    print(f"[DEV NOTICE] Neither SMTP nor Resend succeeded.")
+    return {
+        "status": "failed",
+        "mode": "development",
+        "recipient": to_email
+    }
 
-    if has_real_smtp:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = SMTP_FROM
-            msg["To"] = to_email
-
-            part1 = MIMEText(plain_body, "plain")
-            part2 = MIMEText(html_body, "html")
-            msg.attach(part1)
-            msg.attach(part2)
-
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=5)
-            if SMTP_USE_TLS:
-                server.starttls()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(SMTP_FROM, [to_email], msg.as_string())
-            server.quit()
-
-            print(f"[SMTP] Real email sent successfully to {to_email}")
-            return {"status": "sent", "mode": "smtp", "recipient": to_email}
-        except Exception as e:
-            logger.error(f"SMTP dispatch failed: {e}.")
-            print(f"[SMTP NOTICE] SMTP dispatch failed ({e}).")
-            return {
-                "status": "failed",
-                "mode": "smtp",
-                "error": str(e),
-                "recipient": to_email
-            }
-    else:
-        print(f"[DEV NOTICE] Neither Resend nor SMTP is configured.")
-        return {
-            "status": "unconfigured",
-            "mode": "development",
-            "recipient": to_email
-        }
 
 
