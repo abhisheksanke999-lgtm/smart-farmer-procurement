@@ -1,0 +1,205 @@
+/* Modern Agriculture Theme System */
+:root {
+  --primary: #059669;
+  --primary-hover: #047857;
+  --primary-light: #d1fae5;
+  --secondary: #d97706;
+  --secondary-light: #fef3c7;
+  --bg-dark: #0f172a;
+  --surface-dark: #1e293b;
+  --card-dark: #334155;
+  --text-dark: #f8fafc;
+  --text-muted: #94a3b8;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --accent-gold: #fbbf24;
+}
+
+body {
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body.dark-mode {
+  background-color: var(--bg-dark);
+  color: var(--text-dark);
+}
+
+/* Glassmorphism Cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+  border-radius: 1rem;
+}
+
+body.dark-mode .glass-card {
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(51, 65, 85, 0.8);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+}
+
+/* Agriculture Gradient Header */
+.agri-gradient {
+  background: linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%);
+}
+
+.gold-gradient {
+  background: linear-gradient(135deg, #b45309 0%, #d97706 50%, #f59e0b 100%);
+}
+
+/* Mobile Bottom Navigation */
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  color: #64748b;
+  transition: all 0.2s ease;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.mobile-nav-item.active {
+  color: var(--primary);
+  transform: translateY(-2px);
+}
+
+body.dark-mode .mobile-nav-item {
+  color: #94a3b8;
+}
+
+body.dark-mode .mobile-nav-item.active {
+  color: #34d399;
+}
+
+/* Large Accessible Buttons for Rural Users */
+.btn-agri {
+  background: var(--primary);
+  color: white;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);
+}
+
+.btn-agri:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(5, 150, 105, 0.35);
+}
+
+.btn-agri:active {
+  transform: translateY(0);
+}
+
+/* Status Badges */
+.badge-status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.badge-approved, .badge-completed, .badge-verified {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.badge-pending, .badge-waiting, .badge-processing {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.badge-rejected, .badge-suspended, .badge-failed, .badge-cancelled {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+/* Real-time Queue Pulse Animation */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+.pulse-badge {
+  animation: pulse-ring 2s infinite;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+body.dark-mode ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+/* Printable Receipt Styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-receipt-area, #printable-receipt-area * {
+    visibility: visible;
+  }
+  #printable-receipt-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+

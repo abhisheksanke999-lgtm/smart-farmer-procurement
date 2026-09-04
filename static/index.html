@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Farmer Procurement Management System</title>
+  <meta name="description"
+    content="Production-quality mobile-first Farmer Procurement Management Application reducing waiting time, congestion, and payment confusion.">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- HTML5 QR Code Scanner -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <!-- QRCode Canvas Generator -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+
+<body
+  class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-full font-sans antialiased selection:bg-emerald-500 selection:text-white">
+
+  <!-- Main Root Container -->
+  <div id="app" class="min-h-screen flex flex-col justify-between"></div>
+
+  <!-- JavaScript Modules -->
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/state.js"></script>
+
+  <!-- UI Components -->
+  <script src="/static/js/components/navbar.js"></script>
+  <script src="/static/js/components/notifications.js"></script>
+  <script src="/static/js/components/qr_modal.js"></script>
+  <script src="/static/js/components/qr_scanner.js"></script>
+  <script src="/static/js/components/receipt_modal.js"></script>
+  <script src="/static/js/components/farmer_view.js"></script>
+  <script src="/static/js/components/dealer_view.js"></script>
+  <script src="/static/js/components/admin_view.js"></script>
+
+  <!-- Main App Script -->
+  <script src="/static/js/app.js"></script>
+</body>
+
+</html>
