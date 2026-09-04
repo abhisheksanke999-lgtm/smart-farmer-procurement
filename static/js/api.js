@@ -1,9 +1,12 @@
 const API_BASE = (() => {
-  // If running via Live Server (port 5500), file://, or any non-8000 development server:
-  if (window.location.protocol === "file:" || (window.location.port && window.location.port !== "8000")) {
-    const host = window.location.hostname || "127.0.0.1";
-    return `http://${host}:8000/api`;
+  // If opened via local file:// protocol or frontend dev servers like VS Code Live Server (port 5500)
+  if (window.location.protocol === "file:") {
+    return "http://127.0.0.1:8000/api";
   }
+  if ((window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && window.location.port && window.location.port !== "8000") {
+    return `http://${window.location.hostname}:8000/api`;
+  }
+  // Production cloud domains (Railway, custom domains, etc.)
   return window.location.origin + "/api";
 })();
 
