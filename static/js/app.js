@@ -84,13 +84,6 @@ async function renderApp() {
           ${renderAuthModal()}
         </main>
       `;
-      // Clear inputs to defeat browser password manager autofill
-      setTimeout(() => {
-        const em = document.getElementById("login-email");
-        const pw = document.getElementById("login-password");
-        if (em) em.value = "";
-        if (pw) pw.value = "";
-      }, 50);
     } else {
       let mainContent = '';
       if (user.role === 'FARMER') {
@@ -506,6 +499,22 @@ function renderAuthModal() {
         <p class="text-xs text-slate-500 mt-1">${i18n.t("app_subtitle")}</p>
       </div>
 
+      <!-- Quick Role Quick-Fill Demo Bar -->
+      <div class="mb-5 p-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-slate-300 shadow-inner">
+        <span class="block text-[10px] uppercase text-slate-500 dark:text-slate-400 font-extrabold mb-1.5">⚡ Instant Demo Login Shortcuts:</span>
+        <div class="grid grid-cols-3 gap-1.5 text-center">
+          <button type="button" onclick="fillDemoLogin('abhisheksanke999@gmail.com', 'AdminPass@123')" class="px-2 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold active:scale-95 transition shadow-sm cursor-pointer">
+            Admin
+          </button>
+          <button type="button" onclick="fillDemoLogin('ramu.farmer@example.com', 'FarmerPass@123')" class="px-2 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold active:scale-95 transition shadow-sm cursor-pointer">
+            Farmer
+          </button>
+          <button type="button" onclick="fillDemoLogin('dealer.approved@example.com', 'DealerPass@123')" class="px-2 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold active:scale-95 transition shadow-sm cursor-pointer">
+            Dealer
+          </button>
+        </div>
+      </div>
+
       <!-- Login / Register Tab Toggle -->
       <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 mb-6 font-bold text-xs">
         <button onclick="toggleAuthMode('login')" class="flex-1 py-2 rounded-lg ${authMode === 'login' ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-400 shadow' : 'text-slate-500'} transition">
@@ -518,18 +527,18 @@ function renderAuthModal() {
 
       ${authMode === 'login' ? `
         <!-- LOGIN FORM -->
-        <form onsubmit="handleAuthLoginSubmit(event)" autocomplete="off" class="space-y-4 text-xs">
+        <form id="auth-login-form" onsubmit="handleAuthLoginSubmit(event)" class="space-y-4 text-xs">
           <div>
             <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
-            <input type="email" id="login-email" name="account_email" placeholder="name@example.com" value="" autocomplete="off" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <input type="email" id="login-email" placeholder="e.g. abhisheksanke999@gmail.com" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
 
           <div>
             <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Password</label>
-            <input type="password" id="login-password" name="account_secret" placeholder="Enter your password" value="" autocomplete="new-password" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <input type="password" id="login-password" placeholder="••••••••" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
 
-          <button type="submit" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
+          <button id="btn-login-submit" type="submit" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
             Secure Login
           </button>
         </form>
@@ -590,12 +599,31 @@ function renderAuthModal() {
   `;
 }
 
-function fillDemoLogin(email, password) {
+async function fillDemoLogin(email, password) {
   const e = document.getElementById("login-email");
   const p = document.getElementById("login-password");
-  if (e && p) {
-    e.value = email;
-    p.value = password;
+  if (e) e.value = email;
+  if (p) p.value = password;
+
+  const btn = document.getElementById("btn-login-submit");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="inline-flex items-center justify-center gap-2"><div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Accessing Dashboard...</span>`;
+  }
+
+  try {
+    const res = await api.login(email, password);
+    state.setCurrentUser(res.user);
+    state.setActiveTab(res.user.role === 'ADMIN' ? 'dashboard' : 'home');
+    const notifs = await api.getNotifications();
+    state.setNotifications(notifs);
+  } catch (err) {
+    console.error("Demo login error:", err);
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "Secure Login";
+    }
+    alert(err.message || "Login failed. Please check connection.");
   }
 }
 
@@ -603,6 +631,12 @@ async function handleAuthLoginSubmit(e) {
   e.preventDefault();
   const email = document.getElementById("login-email")?.value;
   const password = document.getElementById("login-password")?.value;
+
+  const btn = document.getElementById("btn-login-submit");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="inline-flex items-center justify-center gap-2"><div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Signing in...</span>`;
+  }
 
   try {
     const res = await api.login(email, password);
@@ -612,6 +646,10 @@ async function handleAuthLoginSubmit(e) {
     state.setNotifications(notifs);
   } catch (err) {
     alert(err.message);
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "Secure Login";
+    }
   }
 }
 
