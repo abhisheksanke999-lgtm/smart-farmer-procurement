@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+cloudflared.exe
 
 # SQLite Database Files
 *.db
