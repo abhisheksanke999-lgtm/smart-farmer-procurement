@@ -30,7 +30,7 @@ async function renderAdminView() {
             SIH Problem Statement 26032 • Control Centre
           </span>
           <h2 class="text-2xl font-extrabold">${i18n.t('admin_dashboard_title')}</h2>
-          <p class="text-xs text-emerald-100 mt-0.5">Logged in as: <strong class="text-white">abhisheksanke999@gmail.com</strong></p>
+          <p class="text-xs text-emerald-100 mt-0.5">Logged in as: <strong class="text-white">${state.currentUser ? state.currentUser.email : 'Administrator'}</strong></p>
         </div>
         
         <div class="flex items-center gap-2">

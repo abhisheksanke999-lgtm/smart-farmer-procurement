@@ -76,7 +76,7 @@ async function renderDealerView() {
           </div>
 
           <div class="mt-4 text-[11px] text-slate-400">
-            For approval inquiries, please contact the Admin Head at <strong class="text-emerald-600">abhisheksanke999@gmail.com</strong>
+            For approval inquiries, please contact the Admin Head at <strong class="text-emerald-600">admin@smartfarmer.gov.in</strong>
           </div>
 
         </div>

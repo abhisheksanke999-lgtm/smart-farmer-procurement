@@ -499,24 +499,6 @@ function renderAuthModal() {
         <p class="text-xs text-slate-500 mt-1">${i18n.t("app_subtitle")}</p>
       </div>
 
-      <!-- Quick Role Quick-Fill Demo Bar -->
-      <div class="mb-5 p-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-        <span class="block text-[10px] uppercase text-slate-400 font-extrabold mb-1">⚡ Instant Demo Login Shortcuts:</span>
-        <div class="grid grid-cols-3 gap-1 text-center">
-          <button onclick="fillDemoLogin('abhisheksanke999@gmail.com', 'AdminPass@123')" class="px-1.5 py-1 rounded bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 transition">
-            Admin
-          </button>
-
-
-          <button onclick="fillDemoLogin('ramu.farmer@example.com', 'FarmerPass@123')" class="px-1.5 py-1 rounded bg-emerald-600 text-white font-bold hover:bg-emerald-500 transition">
-            Farmer
-          </button>
-          <button onclick="fillDemoLogin('dealer.approved@example.com', 'DealerPass@123')" class="px-1.5 py-1 rounded bg-blue-600 text-white font-bold hover:bg-blue-500 transition">
-            Dealer
-          </button>
-        </div>
-      </div>
-
       <!-- Login / Register Tab Toggle -->
       <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 mb-6 font-bold text-xs">
         <button onclick="toggleAuthMode('login')" class="flex-1 py-2 rounded-lg ${authMode === 'login' ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-400 shadow' : 'text-slate-500'} transition">
@@ -532,12 +514,12 @@ function renderAuthModal() {
         <form onsubmit="handleAuthLoginSubmit(event)" class="space-y-4 text-xs">
           <div>
             <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
-            <input type="email" id="login-email" placeholder="e.g. abhisheksanke999@gmail.com" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <input type="email" id="login-email" placeholder="name@example.com" value="" autocomplete="email" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
 
           <div>
             <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Password</label>
-            <input type="password" id="login-password" placeholder="••••••••" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <input type="password" id="login-password" placeholder="Enter your password" value="" autocomplete="current-password" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
 
           <button type="submit" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
