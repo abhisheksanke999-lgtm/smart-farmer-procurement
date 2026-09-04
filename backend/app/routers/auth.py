@@ -148,17 +148,13 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
         # Send OTP email safely
         email_res = send_otp_email(to_email=email, recipient_name=register_data.name.strip(), otp_code=otp)
 
-        resp = {
+        return {
             "status": "pending_verification",
-            "message": "OTP sent to your email. Please verify to complete registration.",
+            "message": "OTP verification code sent to your email. Please check your inbox.",
             "email": email,
             "expires_in_seconds": 300,
             "attempts_left": 5
         }
-        if email_res.get("dev_otp"):
-            resp["dev_otp"] = email_res["dev_otp"]
-            resp["smtp_blocked"] = email_res.get("mode") == "development"
-        return resp
 
 
     elif register_data.role == UserRole.DEALER:
@@ -376,17 +372,13 @@ def resend_otp(req: OTPResendRequest, db: Session = Depends(get_db)):
     # Send email
     email_res = send_otp_email(to_email=pending.email, recipient_name=pending.name, otp_code=new_otp)
 
-    resp = {
+    return {
         "status": "sent",
-        "message": "A new verification OTP has been sent to your email address.",
+        "message": "A new verification OTP code has been sent to your email address.",
         "email": pending.email,
         "expires_in_seconds": 300,
         "attempts_left": 5
     }
-    if email_res.get("dev_otp"):
-        resp["dev_otp"] = email_res["dev_otp"]
-        resp["smtp_blocked"] = email_res.get("mode") == "development"
-    return resp
 
 
 @router.post("/verify-email")

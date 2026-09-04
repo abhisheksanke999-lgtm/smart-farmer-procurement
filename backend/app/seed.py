@@ -15,7 +15,7 @@ def seed_database():
     db: Session = SessionLocal()
 
     # Check if admin already exists
-    admin_user = db.query(User).filter(User.email == "abhisheksanke999@gmail.com").first()
+    admin_user = db.query(User).filter(User.email == "admin@smartfarmer.gov.in").first()
     if admin_user:
         print("Database already seeded.")
         db.close()
@@ -26,7 +26,7 @@ def seed_database():
     # 1. Admin User
     admin = User(
         name="Shri Abhishek Sanke (Admin Head)",
-        email="abhisheksanke999@gmail.com",
+        email="admin@smartfarmer.gov.in",
         phone="9876543210",
         role=UserRole.ADMIN,
         password_hash=get_password_hash("AdminPass@123"),

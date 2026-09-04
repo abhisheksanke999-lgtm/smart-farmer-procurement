@@ -156,9 +156,10 @@ def run_tests():
 
         # Existing email check (admin email)
         r = client.post("/api/auth/register", json={
-            "name": test_name, "email": "abhisheksanke999@gmail.com", "phone": test_phone, "password": test_password, "role": "FARMER"
+            "name": test_name, "email": "admin@smartfarmer.gov.in", "phone": test_phone, "password": test_password, "role": "FARMER"
         })
         assert r.status_code == 400, f"Expected 400 for existing email, got {r.status_code}"
+
         print("[PASS] Field validations passed.")
 
         # TEST 2: Farmer Registration Initiates OTP without Immediate Account Creation
@@ -241,10 +242,16 @@ def run_tests():
 
         # TEST 6: Resend OTP Cooldown & Invalidation of Previous OTP
         print("\n[TEST 6] Testing Resend OTP Cooldown & Invalidation of Previous OTP...")
+        db.expire_all()
+        p_cd = db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == test_email).first()
+        p_cd.last_sent_at = datetime.utcnow()
+        db.commit()
+
         # Check cooldown (sent just moments ago)
         r_cooldown = client.post("/api/auth/resend-otp", json={"email": test_email})
         assert r_cooldown.status_code == 429, f"Expected 429 Cooldown, got {r_cooldown.status_code}"
         assert "seconds before requesting a new OTP" in r_cooldown.json()["detail"]
+
 
         # Fast-forward last_sent_at by 31 seconds to test successful resend
         db.expire_all()
@@ -325,8 +332,9 @@ def run_tests():
         # TEST 9: Regression Tests (Admin, Dealer, Seeded Farmer)
         print("\n[TEST 9] Testing Existing Functionality & Regression Check...")
         # Admin Login
-        r_admin = client.post("/api/auth/login", json={"email": "abhisheksanke999@gmail.com", "password": "AdminPass@123"})
+        r_admin = client.post("/api/auth/login", json={"email": "admin@smartfarmer.gov.in", "password": "AdminPass@123"})
         assert r_admin.status_code == 200, "Admin login broken!"
+
         admin_token = r_admin.json()["access_token"]
         r_stats = client.get("/api/admin/dashboard-stats", headers={"Authorization": f"Bearer {admin_token}"})
         assert r_stats.status_code == 200, "Admin stats broken!"

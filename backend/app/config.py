@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     SMTP_FROM: str = "noreply@smartfarmer.gov.in"
     SMTP_USE_TLS: bool = True
 
+    # Cloud HTTP Email API (Resend / Brevo)
+    RESEND_API_KEY: str = ""
+
+
     class Config:
         case_sensitive = True
         env_file = ".env"

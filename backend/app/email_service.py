@@ -1,4 +1,7 @@
 import os
+import json
+import urllib.request
+import urllib.error
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -7,6 +10,9 @@ import logging
 from .config import settings
 
 logger = logging.getLogger("email_service")
+
+# Resend HTTP API Configuration
+RESEND_API_KEY = getattr(settings, "RESEND_API_KEY", "") or os.environ.get("RESEND_API_KEY", "")
 
 # SMTP Configuration from Settings
 SMTP_SERVER = settings.SMTP_SERVER or os.environ.get("SMTP_SERVER", "")
@@ -59,17 +65,50 @@ def generate_otp_html(recipient_name: str, otp_code: str) -> str:
 def send_otp_email(to_email: str, recipient_name: str, otp_code: str) -> dict:
     """
     Sends an OTP verification email to the user.
-    Uses SMTP if credentials are provided; otherwise simulates development dispatch safely without exposing plain OTP in logs.
+    Priority 1: Resend HTTP REST API (Port 443 HTTPS, works on all cloud providers).
+    Priority 2: Standard SMTP (Port 587 TLS).
     """
     subject = f"{otp_code} is your Smart Farmer Procurement verification code"
     html_body = generate_otp_html(recipient_name, otp_code)
     plain_body = f"Hello {recipient_name},\n\nYour One-Time Password (OTP) for Smart Farmer Procurement email verification is: {otp_code}\n\nThis code is valid for 5 minutes.\n\nThank you,\nSmart Farmer Procurement Team"
 
     print("=" * 60)
-    print(f"[EMAIL OTP DISPATCH] Verification code sent to: {to_email}")
+    print(f"[EMAIL OTP DISPATCH] Verification code sending to: {to_email}")
     print(f"Validity: 5 Minutes | Stored as Salted Cryptographic Hash")
     print("=" * 60)
 
+    # 1. PRIORITY: Resend HTTP REST API (Bypasses all cloud port blocks over HTTPS port 443)
+    resend_key = RESEND_API_KEY or os.environ.get("RESEND_API_KEY", "")
+    if resend_key and resend_key.startswith("re_"):
+        try:
+            req = urllib.request.Request(
+                "https://api.resend.com/emails",
+                data=json.dumps({
+                    "from": "Smart Farmer Procurement <onboarding@resend.dev>",
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html_body
+                }).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {resend_key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "SmartFarmer/1.0"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                print(f"[RESEND HTTP API] Email delivered successfully to {to_email} via Resend ID: {resp_data.get('id')}")
+                return {"status": "sent", "mode": "resend", "recipient": to_email, "id": resp_data.get("id")}
+        except urllib.error.HTTPError as he:
+            err_body = he.read().decode("utf-8", errors="ignore")
+            logger.error(f"Resend HTTP API error {he.code}: {err_body}")
+            print(f"[RESEND ERROR] Status {he.code}: {err_body}")
+        except Exception as e:
+            logger.error(f"Resend HTTP API exception: {e}")
+            print(f"[RESEND EXCEPTION] {e}")
+
+    # 2. SECONDARY: Standard SMTP
     has_real_smtp = (
         bool(SMTP_SERVER and SMTP_USERNAME and SMTP_PASSWORD) and
         not any(placeholder in SMTP_USERNAME.lower() for placeholder in ["your_email", "example.com", "your_username"]) and
@@ -98,21 +137,20 @@ def send_otp_email(to_email: str, recipient_name: str, otp_code: str) -> dict:
             print(f"[SMTP] Real email sent successfully to {to_email}")
             return {"status": "sent", "mode": "smtp", "recipient": to_email}
         except Exception as e:
-            logger.error(f"SMTP dispatch failed: {e}. Falling back to dev/auto-fill mode.")
-            print(f"[SMTP NOTICE] SMTP dispatch failed ({e}). Returning fallback OTP.")
+            logger.error(f"SMTP dispatch failed: {e}.")
+            print(f"[SMTP NOTICE] SMTP dispatch failed ({e}).")
             return {
-                "status": "fallback",
-                "mode": "development",
-                "dev_otp": otp_code,
-                "reason": f"SMTP connection blocked by hosting platform or failed: {e}",
+                "status": "failed",
+                "mode": "smtp",
+                "error": str(e),
                 "recipient": to_email
             }
     else:
-        print(f"[DEV NOTICE] SMTP is in development/placeholder mode.")
+        print(f"[DEV NOTICE] Neither Resend nor SMTP is configured.")
         return {
-            "status": "sent",
+            "status": "unconfigured",
             "mode": "development",
-            "dev_otp": otp_code,
             "recipient": to_email
         }
+
 
