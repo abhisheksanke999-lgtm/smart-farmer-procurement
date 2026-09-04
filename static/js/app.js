@@ -170,7 +170,7 @@ function selectRegisterRole(role) {
   renderApp();
 }
 
-function initiateOtpVerification(email, name, expiresInSeconds = 300, attemptsAllowed = 5) {
+function initiateOtpVerification(email, name, expiresInSeconds = 300, attemptsAllowed = 5, devOtp = null) {
   if (otpVerificationState.timerInterval) clearInterval(otpVerificationState.timerInterval);
   if (otpVerificationState.cooldownInterval) clearInterval(otpVerificationState.cooldownInterval);
 
@@ -181,6 +181,7 @@ function initiateOtpVerification(email, name, expiresInSeconds = 300, attemptsAl
     secondsLeft: expiresInSeconds,
     attemptsLeft: attemptsAllowed,
     resendCooldown: 30,
+    devOtp: devOtp,
     errorMessage: "",
     successMessage: "",
     isVerifying: false,
@@ -337,6 +338,7 @@ async function handleResendOtp() {
     otpVerificationState.attemptsLeft = res.attempts_left || 5;
     otpVerificationState.resendCooldown = 30;
     otpVerificationState.enteredOtp = "";
+    if (res.dev_otp) otpVerificationState.devOtp = res.dev_otp;
     otpVerificationState.successMessage = res.message || "A new 6-digit verification code has been sent to your email!";
     renderApp();
     setTimeout(() => {
@@ -396,6 +398,25 @@ function renderOtpVerificationCard() {
           <span>${otpVerificationState.attemptsLeft} ${i18n.t("otp_attempts_left")}</span>
         </div>
       </div>
+
+      <!-- Demo / Fallback OTP Banner if SMTP blocked on Render Free Tier -->
+      ${otpVerificationState.devOtp ? `
+        <div class="p-3 mb-4 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs shadow-sm">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5 font-bold">
+              <i data-lucide="key" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+              <span>Verification OTP:</span>
+              <span class="font-mono text-sm font-extrabold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded ml-1 tracking-wider">${otpVerificationState.devOtp}</span>
+            </div>
+            <button type="button" onclick="const inp=document.getElementById('otp-input'); if(inp){ inp.value='${otpVerificationState.devOtp}'; handleOtpInput(inp); }" class="px-2.5 py-1 bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 rounded-lg text-[11px] font-bold hover:bg-amber-300 transition shadow-sm">
+              Auto-fill OTP
+            </button>
+          </div>
+          <p class="text-[10px] text-amber-700 dark:text-amber-400 mt-1.5">
+            Cloud free tier (Render) blocks SMTP port 587. Your OTP is provided directly above for seamless testing.
+          </p>
+        </div>
+      ` : ''}
 
       <!-- Error Message Banner -->
       ${otpVerificationState.errorMessage ? `
@@ -673,7 +694,7 @@ async function handleAuthRegisterSubmit(e) {
 
     if (res.status === "pending_verification") {
       // Initiate dedicated OTP verification screen
-      initiateOtpVerification(data.email, data.name, res.expires_in_seconds || 300, res.attempts_left || 5);
+      initiateOtpVerification(data.email, data.name, res.expires_in_seconds || 300, res.attempts_left || 5, res.dev_otp);
     } else if (selectedRegisterRole === 'DEALER') {
       alert(res.message || "Dealer registration submitted successfully! Pending Administrator approval.");
       authMode = "login";

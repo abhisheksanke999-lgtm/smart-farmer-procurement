@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 import uvicorn
 from backend.app.main import app
 from backend.app.database import SessionLocal
-from backend.app.models import User, FarmerProfile, PendingFarmerRegistration, UserRole
+from backend.app.models import User, FarmerProfile, PendingFarmerRegistration, UserRole, Notification, AuditLog
 from backend.app.routers.auth import hash_otp
 import backend.app.email_service as email_service
 
@@ -109,10 +109,15 @@ def run_tests():
     test_phone = "9876543210"
 
     # Cleanup any leftovers from prior runs
-    db.query(FarmerProfile).filter(FarmerProfile.user.has(email=test_email)).delete(synchronize_session=False)
-    db.query(User).filter(User.email == test_email).delete()
+    prior_u = db.query(User).filter(User.email == test_email).first()
+    if prior_u:
+        db.query(Notification).filter(Notification.user_id == prior_u.id).delete()
+        db.query(AuditLog).filter(AuditLog.actor_id == prior_u.id).delete()
+        db.query(FarmerProfile).filter(FarmerProfile.user_id == prior_u.id).delete()
+        db.delete(prior_u)
     db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == test_email).delete()
     db.commit()
+
 
     captured_otps = []
     import backend.app.routers.auth as auth_router
@@ -340,11 +345,16 @@ def run_tests():
         server.should_exit = True
         auth_router.send_otp_email = original_send_otp_email
         # Clean up test user
-        db.query(FarmerProfile).filter(FarmerProfile.user.has(email=test_email)).delete(synchronize_session=False)
-        db.query(User).filter(User.email == test_email).delete()
+        test_u = db.query(User).filter(User.email == test_email).first()
+        if test_u:
+            db.query(Notification).filter(Notification.user_id == test_u.id).delete()
+            db.query(AuditLog).filter(AuditLog.actor_id == test_u.id).delete()
+            db.query(FarmerProfile).filter(FarmerProfile.user_id == test_u.id).delete()
+            db.delete(test_u)
         db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == test_email).delete()
         db.commit()
         db.close()
+
 
     print("\n" + "=" * 70)
     print("SUCCESS: ALL TESTS PASSED! EMAIL OTP FARMER REGISTRATION SYSTEM FULLY VERIFIED.")

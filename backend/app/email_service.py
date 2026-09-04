@@ -88,7 +88,7 @@ def send_otp_email(to_email: str, recipient_name: str, otp_code: str) -> dict:
             msg.attach(part1)
             msg.attach(part2)
 
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10)
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=5)
             if SMTP_USE_TLS:
                 server.starttls()
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
@@ -98,15 +98,21 @@ def send_otp_email(to_email: str, recipient_name: str, otp_code: str) -> dict:
             print(f"[SMTP] Real email sent successfully to {to_email}")
             return {"status": "sent", "mode": "smtp", "recipient": to_email}
         except Exception as e:
-            logger.error(f"SMTP dispatch failed: {e}. Falling back to simulated mode.")
-            print(f"[SMTP WARNING] SMTP dispatch failed ({e}). Using simulated mode.")
-            print(f"[DEV NOTICE] For local testing, verification OTP is: {otp_code}")
+            logger.error(f"SMTP dispatch failed: {e}. Falling back to dev/auto-fill mode.")
+            print(f"[SMTP NOTICE] SMTP dispatch failed ({e}). Returning fallback OTP.")
+            return {
+                "status": "fallback",
+                "mode": "development",
+                "dev_otp": otp_code,
+                "reason": f"SMTP connection blocked by hosting platform or failed: {e}",
+                "recipient": to_email
+            }
     else:
-        print(f"[DEV NOTICE] SMTP is in development/placeholder mode in .env.")
-        print(f"[DEV NOTICE] For local testing, verification OTP is: {otp_code}")
+        print(f"[DEV NOTICE] SMTP is in development/placeholder mode.")
+        return {
+            "status": "sent",
+            "mode": "development",
+            "dev_otp": otp_code,
+            "recipient": to_email
+        }
 
-    return {
-        "status": "sent",
-        "mode": "development",
-        "recipient": to_email
-    }
