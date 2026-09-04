@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: smart-farmer-procurement
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PROJECT_NAME
+        value: Smart Farmer Procurement Management System
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./farmer_procurement.db
