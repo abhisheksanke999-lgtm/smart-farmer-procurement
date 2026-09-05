@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # Resend HTTPS API Configuration
     RESEND_API_KEY: str = ""
-    RESEND_FROM_EMAIL: str = "Smart Farmer <onboarding@resend.dev>"
+    RESEND_FROM_EMAIL: str = "Smart Farmer <noreply@myproject999.online>"
 
 
 
