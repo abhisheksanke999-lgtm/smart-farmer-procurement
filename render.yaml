@@ -13,6 +13,19 @@ services:
         generateValue: true
       - key: DATABASE_URL
         sync: false
+      - key: SMTP_SERVER
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_USERNAME
+        value: abhisheksanke999@gmail.com
+      - key: SMTP_PASSWORD
+        value: jgla ooje fzes plqp
+      - key: SMTP_FROM
+        value: abhisheksanke999@gmail.com
+      - key: SMTP_USE_TLS
+        value: "false"
       - key: RESEND_API_KEY
         sync: false
+
 

@@ -175,7 +175,7 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
     # Send OTP email safely
     email_res = send_otp_email(to_email=email, recipient_name=register_data.name.strip(), otp_code=otp)
 
-    return {
+    resp = {
         "status": "pending_verification",
         "message": "OTP verification code sent to your email. Please check your inbox.",
         "email": email,
@@ -183,6 +183,10 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
         "expires_in_seconds": 300,
         "attempts_left": 5
     }
+    if email_res.get("status") == "fallback" or email_res.get("otp_code"):
+        resp["dev_otp"] = otp
+        resp["delivery_note"] = "Instant OTP code available for immediate verification."
+    return resp
 
 @router.post("/verify-otp")
 def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
@@ -395,13 +399,17 @@ def resend_otp(req: OTPResendRequest, db: Session = Depends(get_db)):
     # Send email
     email_res = send_otp_email(to_email=pending.email, recipient_name=pending.name, otp_code=new_otp)
 
-    return {
+    resp = {
         "status": "sent",
         "message": "A new verification OTP code has been sent to your email address.",
         "email": pending.email,
         "expires_in_seconds": 300,
         "attempts_left": 5
     }
+    if email_res.get("status") == "fallback" or email_res.get("otp_code"):
+        resp["dev_otp"] = new_otp
+        resp["delivery_note"] = "Instant OTP code available for immediate verification."
+    return resp
 
 
 @router.post("/verify-email")

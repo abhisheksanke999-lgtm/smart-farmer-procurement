@@ -287,6 +287,19 @@ function handleOtpInput(input) {
   }
 }
 
+function autoFillOtp(code) {
+  otpVerificationState.enteredOtp = code;
+  const inp = document.getElementById("otp-input");
+  const btn = document.getElementById("btn-verify-otp");
+  if (inp) {
+    inp.value = code;
+    inp.focus();
+  }
+  if (btn && otpVerificationState.secondsLeft > 0 && otpVerificationState.attemptsLeft > 0) {
+    btn.disabled = code.length !== 6;
+  }
+}
+
 function handleOtpSubmitForm(e) {
   if (e) e.preventDefault();
   submitOtpVerification();
@@ -448,6 +461,24 @@ function renderOtpVerificationCard() {
         <div class="p-3 mb-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 shadow-sm">
           <i data-lucide="check-circle-2" class="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400"></i>
           <div class="flex-1 font-medium">${escapeHtml(otpVerificationState.successMessage)}</div>
+        </div>
+      ` : ''}
+
+      <!-- Instant Backup OTP Banner (if email delivery is delayed) -->
+      ${otpVerificationState.devOtp ? `
+        <div class="p-3 mb-4 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between gap-2 shadow-sm">
+          <div class="flex items-center gap-2 min-w-0">
+            <i data-lucide="key" class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0"></i>
+            <div class="truncate">
+              <span class="font-bold">Instant Code:</span>
+              <span class="font-mono text-sm font-extrabold tracking-widest text-amber-900 dark:text-amber-100 ml-1.5 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/60 rounded border border-amber-300 dark:border-amber-700 select-all">${escapeHtml(otpVerificationState.devOtp)}</span>
+            </div>
+          </div>
+          <button type="button"
+                  onclick="autoFillOtp('${escapeHtml(otpVerificationState.devOtp)}')"
+                  class="px-2.5 py-1 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition shrink-0 shadow">
+            Auto-Fill
+          </button>
         </div>
       ` : ''}
 
