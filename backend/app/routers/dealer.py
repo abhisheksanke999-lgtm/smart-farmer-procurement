@@ -166,7 +166,7 @@ def process_procurement(proc: ProcurementCreate, current_user: User = Depends(re
 
 @router.get("/transactions")
 def get_dealer_transactions(current_user: User = Depends(require_dealer), db: Session = Depends(get_db)):
-    txns = db.query(ProcurementTransaction).filter(ProcurementTransaction.dealer_id == current_user.id).order_by(ProcurementTransaction.created_at.desc()).all()
+    txns = db.query(ProcurementTransaction).filter(ProcurementTransaction.dealer_id == current_user.id).order_by(ProcurementTransaction.transaction_time.desc()).all()
     res = []
     for t in txns:
         res.append({

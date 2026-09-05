@@ -156,7 +156,7 @@ def run_tests():
 
         # Existing email check (admin email)
         r = client.post("/api/auth/register", json={
-            "name": test_name, "email": "admin@smartfarmer.gov.in", "phone": test_phone, "password": test_password, "role": "FARMER"
+            "name": test_name, "email": "abhisheksanke999@gmail.com", "phone": test_phone, "password": test_password, "role": "FARMER"
         })
         assert r.status_code == 400, f"Expected 400 for existing email, got {r.status_code}"
 
@@ -329,23 +329,23 @@ def run_tests():
         assert r_centres.status_code == 200
         print("[PASS] Farmer account created, email verified, pending record cleared, and token valid.")
 
-        # TEST 9: Regression Tests (Admin, Dealer, Seeded Farmer)
+        # TEST 9: Regression Tests (Admin, Verified Farmer, Dummy Account Check)
         print("\n[TEST 9] Testing Existing Functionality & Regression Check...")
         # Admin Login
-        r_admin = client.post("/api/auth/login", json={"email": "admin@smartfarmer.gov.in", "password": "AdminPass@123"})
+        r_admin = client.post("/api/auth/login", json={"email": "abhisheksanke999@gmail.com", "password": "AdminPass@123", "role": "ADMIN"})
         assert r_admin.status_code == 200, "Admin login broken!"
 
         admin_token = r_admin.json()["access_token"]
         r_stats = client.get("/api/admin/dashboard-stats", headers={"Authorization": f"Bearer {admin_token}"})
         assert r_stats.status_code == 200, "Admin stats broken!"
 
-        # Seeded Farmer Login
-        r_farmer = client.post("/api/auth/login", json={"email": "ramu.farmer@example.com", "password": "FarmerPass@123"})
-        assert r_farmer.status_code == 200, "Existing farmer login broken!"
+        # Verified Farmer Login
+        r_farmer = client.post("/api/auth/login", json={"email": test_email, "password": test_password, "role": "FARMER"})
+        assert r_farmer.status_code == 200, "Newly verified farmer login broken!"
 
-        # Seeded Dealer Login
-        r_dealer = client.post("/api/auth/login", json={"email": "dealer.approved@example.com", "password": "DealerPass@123"})
-        assert r_dealer.status_code == 200, "Existing dealer login broken!"
+        # Verify decommissioned dummy accounts cannot log in
+        r_dummy = client.post("/api/auth/login", json={"email": "ramu.farmer@example.com", "password": "FarmerPass@123"})
+        assert r_dummy.status_code == 401, "Decommissioned dummy account was allowed to log in!"
 
         print("[PASS] All regression tests passed.")
 

@@ -26,34 +26,45 @@ document.addEventListener("DOMContentLoaded", async () => {
     state.currentUser = null;
   }
 
-  // Respect hash route if present on startup
-  const initHash = window.location.hash.replace('#', '');
-  if (initHash) {
-    state.activeTab = initHash;
-  }
-
   // Subscribe state store to trigger re-renders
   state.subscribe(() => {
     renderApp();
   });
 
+  // Enforce route security based on auth and permitted role tabs
+  enforceRouteSecurity();
+
   // Initial Render
   await renderApp();
 });
 
-// Handle browser backwards / forwards button navigation
-window.addEventListener("popstate", (e) => {
-  let targetTab = null;
-  if (e.state && e.state.tab) {
-    targetTab = e.state.tab;
+// Enforce strict route security on hash change and browser navigation
+function enforceRouteSecurity() {
+  const hash = window.location.hash.replace('#', '');
+  if (!state.currentUser) {
+    if (state.activeTab !== 'login' || hash !== 'login') {
+      state.activeTab = 'login';
+      if (window.location.hash !== '#login') {
+        window.location.hash = '#login';
+      }
+    }
+    return;
+  }
+
+  const allowed = (typeof ROLE_ALLOWED_TABS !== 'undefined' && ROLE_ALLOWED_TABS[state.currentUser.role]) || (state.currentUser.role === 'ADMIN' ? ['dashboard'] : ['home']);
+  const defaultTab = state.currentUser.role === 'ADMIN' ? 'dashboard' : 'home';
+
+  if (!hash || hash === 'login' || !allowed.includes(hash)) {
+    // Attempted unauthorized or invalid route access
+    window.location.hash = '#' + defaultTab;
+    state.setActiveTab(defaultTab, false);
   } else {
-    const hash = window.location.hash.replace('#', '');
-    targetTab = hash || (state.currentUser?.role === 'ADMIN' ? 'dashboard' : 'home');
+    state.setActiveTab(hash, false);
   }
-  if (targetTab) {
-    state.setActiveTab(targetTab, false);
-  }
-});
+}
+
+window.addEventListener("hashchange", enforceRouteSecurity);
+window.addEventListener("popstate", enforceRouteSecurity);
 
 function navigateBack() {
   if (window.history.length > 1) {
@@ -84,6 +95,12 @@ async function renderApp() {
           ${renderAuthModal()}
         </main>
       `;
+      setTimeout(() => {
+        const em = document.getElementById("login-email");
+        const pw = document.getElementById("login-password");
+        if (em) em.value = "";
+        if (pw) pw.value = "";
+      }, 50);
     } else {
       let mainContent = '';
       if (user.role === 'FARMER') {
@@ -122,7 +139,19 @@ async function renderApp() {
 }
 
 let authMode = "login"; // "login" or "register"
+let selectedLoginRole = "ADMIN"; // "ADMIN", "FARMER", or "DEALER"
 let selectedRegisterRole = "FARMER";
+
+function selectLoginRole(role) {
+  selectedLoginRole = role;
+  renderApp();
+  setTimeout(() => {
+    const em = document.getElementById("login-email");
+    const pw = document.getElementById("login-password");
+    if (em) em.value = "";
+    if (pw) pw.value = "";
+  }, 50);
+}
 
 // OTP Verification Modal State
 let otpVerificationState = {
@@ -163,6 +192,12 @@ function toggleAuthMode(mode) {
   if (otpVerificationState.timerInterval) clearInterval(otpVerificationState.timerInterval);
   if (otpVerificationState.cooldownInterval) clearInterval(otpVerificationState.cooldownInterval);
   renderApp();
+  setTimeout(() => {
+    const em = document.getElementById("login-email");
+    const pw = document.getElementById("login-password");
+    if (em) em.value = "";
+    if (pw) pw.value = "";
+  }, 50);
 }
 
 function selectRegisterRole(role) {
@@ -499,22 +534,6 @@ function renderAuthModal() {
         <p class="text-xs text-slate-500 mt-1">${i18n.t("app_subtitle")}</p>
       </div>
 
-      <!-- Quick Role Quick-Fill Demo Bar -->
-      <div class="mb-5 p-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-slate-300 shadow-inner">
-        <span class="block text-[10px] uppercase text-slate-500 dark:text-slate-400 font-extrabold mb-1.5">⚡ Instant Demo Login Shortcuts:</span>
-        <div class="grid grid-cols-3 gap-1.5 text-center">
-          <button type="button" onclick="fillDemoLogin('abhisheksanke999@gmail.com', 'AdminPass@123')" class="px-2 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold active:scale-95 transition shadow-sm cursor-pointer">
-            Admin
-          </button>
-          <button type="button" onclick="fillDemoLogin('ramu.farmer@example.com', 'FarmerPass@123')" class="px-2 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold active:scale-95 transition shadow-sm cursor-pointer">
-            Farmer
-          </button>
-          <button type="button" onclick="fillDemoLogin('dealer.approved@example.com', 'DealerPass@123')" class="px-2 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold active:scale-95 transition shadow-sm cursor-pointer">
-            Dealer
-          </button>
-        </div>
-      </div>
-
       <!-- Login / Register Tab Toggle -->
       <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 mb-6 font-bold text-xs">
         <button onclick="toggleAuthMode('login')" class="flex-1 py-2 rounded-lg ${authMode === 'login' ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-400 shadow' : 'text-slate-500'} transition">
@@ -527,24 +546,44 @@ function renderAuthModal() {
 
       ${authMode === 'login' ? `
         <!-- LOGIN FORM -->
-        <form id="auth-login-form" onsubmit="handleAuthLoginSubmit(event)" class="space-y-4 text-xs">
+        <form id="auth-login-form" onsubmit="handleAuthLoginSubmit(event)" class="space-y-4 text-xs" autocomplete="off">
+          
+          <!-- Role Selection: ADMIN, FARMER, DEALER -->
           <div>
-            <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
-            <input type="email" id="login-email" placeholder="e.g. abhisheksanke999@gmail.com" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">Select Role:</label>
+            <div class="grid grid-cols-3 gap-2 font-bold text-xs">
+              <button type="button" id="role-btn-admin" onclick="selectLoginRole('ADMIN')" class="p-2.5 rounded-xl border-2 transition ${selectedLoginRole === 'ADMIN' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'}">
+                🏛️ Admin
+              </button>
+              <button type="button" id="role-btn-farmer" onclick="selectLoginRole('FARMER')" class="p-2.5 rounded-xl border-2 transition ${selectedLoginRole === 'FARMER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'}">
+                🌾 Farmer
+              </button>
+              <button type="button" id="role-btn-dealer" onclick="selectLoginRole('DEALER')" class="p-2.5 rounded-xl border-2 transition ${selectedLoginRole === 'DEALER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'}">
+                🏢 Dealer
+              </button>
+            </div>
           </div>
 
           <div>
-            <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Password</label>
-            <input type="password" id="login-password" placeholder="••••••••" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
+            <input type="email" id="login-email" name="login_email" placeholder="Enter your registered email" value="" required autocomplete="off" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block font-bold text-slate-700 dark:text-slate-300">Password</label>
+              <button type="button" onclick="handleForgotPassword()" class="text-[11px] text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-semibold transition">Forgot Password?</button>
+            </div>
+            <input type="password" id="login-password" name="login_password" placeholder="Enter your password" value="" required autocomplete="new-password" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
 
           <button id="btn-login-submit" type="submit" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
-            Secure Login
+            Secure Login as ${selectedLoginRole}
           </button>
         </form>
       ` : `
         <!-- REGISTER FORM -->
-        <form onsubmit="handleAuthRegisterSubmit(event)" class="space-y-4 text-xs">
+        <form onsubmit="handleAuthRegisterSubmit(event)" class="space-y-4 text-xs" autocomplete="off">
           
           <!-- Role Selection Pills -->
           <div>
@@ -561,36 +600,36 @@ function renderAuthModal() {
 
           <div>
             <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Full Name</label>
-            <input type="text" id="reg-name" placeholder="Enter Full Name" required class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
+            <input type="text" id="reg-name" placeholder="Enter Full Name" value="" required autocomplete="off" class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
           </div>
 
           <div class="grid grid-cols-2 gap-2">
             <div>
               <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email</label>
-              <input type="email" id="reg-email" placeholder="name@example.com" required class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
+              <input type="email" id="reg-email" placeholder="Enter your email address" value="" required autocomplete="off" class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
             </div>
             <div>
               <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Mobile No</label>
-              <input type="tel" id="reg-phone" placeholder="9876543210" required class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
+              <input type="tel" id="reg-phone" placeholder="9876543210" value="" required autocomplete="off" class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
             </div>
           </div>
 
           <div>
             <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Password</label>
-            <input type="password" id="reg-password" placeholder="Create Secure Password (min 6 chars)" minlength="6" required class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
+            <input type="password" id="reg-password" placeholder="Create Secure Password (min 6 chars)" value="" minlength="6" required autocomplete="off" class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
           </div>
 
           ${selectedRegisterRole === 'DEALER' ? `
             <div class="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 space-y-2">
               <span class="font-extrabold text-amber-900 dark:text-amber-300 block">Dealer Business Information:</span>
-              <input type="text" id="reg-biz-name" placeholder="Business Name (e.g. Sri Venkateswara Traders)" required class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900">
-              <input type="text" id="reg-license" placeholder="Trade License No (e.g. LIC-2026-901)" required class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 font-mono">
-              <input type="text" id="reg-gstin" placeholder="GSTIN / ID Number" required class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 uppercase font-mono">
+              <input type="text" id="reg-biz-name" placeholder="Business Name (e.g. Sri Venkateswara Traders)" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900">
+              <input type="text" id="reg-license" placeholder="Trade License No (e.g. LIC-2026-901)" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 font-mono">
+              <input type="text" id="reg-gstin" placeholder="GSTIN / ID Number" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 uppercase font-mono">
             </div>
           ` : ''}
 
           <button type="submit" id="btn-submit-reg" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
-            ${selectedRegisterRole === 'FARMER' ? 'Send Email OTP & Verify' : 'Complete Registration'}
+            Send Email OTP & Verify
           </button>
         </form>
       `}
@@ -599,38 +638,15 @@ function renderAuthModal() {
   `;
 }
 
-async function fillDemoLogin(email, password) {
-  const e = document.getElementById("login-email");
-  const p = document.getElementById("login-password");
-  if (e) e.value = email;
-  if (p) p.value = password;
-
-  const btn = document.getElementById("btn-login-submit");
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<span class="inline-flex items-center justify-center gap-2"><div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Accessing Dashboard...</span>`;
-  }
-
-  try {
-    const res = await api.login(email, password);
-    state.setCurrentUser(res.user);
-    state.setActiveTab(res.user.role === 'ADMIN' ? 'dashboard' : 'home');
-    const notifs = await api.getNotifications();
-    state.setNotifications(notifs);
-  } catch (err) {
-    console.error("Demo login error:", err);
-    if (btn) {
-      btn.disabled = false;
-      btn.innerText = "Secure Login";
-    }
-    alert(err.message || "Login failed. Please check connection.");
-  }
-}
-
 async function handleAuthLoginSubmit(e) {
   e.preventDefault();
-  const email = document.getElementById("login-email")?.value;
+  const email = document.getElementById("login-email")?.value?.trim();
   const password = document.getElementById("login-password")?.value;
+
+  if (!email || !password) {
+    alert("Please enter both email address and password.");
+    return;
+  }
 
   const btn = document.getElementById("btn-login-submit");
   if (btn) {
@@ -639,13 +655,13 @@ async function handleAuthLoginSubmit(e) {
   }
 
   try {
-    const res = await api.login(email, password);
+    const res = await api.login(email, password, selectedLoginRole);
     state.setCurrentUser(res.user);
     state.setActiveTab(res.user.role === 'ADMIN' ? 'dashboard' : 'home');
     const notifs = await api.getNotifications();
     state.setNotifications(notifs);
   } catch (err) {
-    alert(err.message);
+    alert(err.message || "Invalid email or password.");
     if (btn) {
       btn.disabled = false;
       btn.innerText = "Secure Login";
@@ -706,27 +722,40 @@ async function handleAuthRegisterSubmit(e) {
     if (res.status === "pending_verification") {
       // Initiate dedicated OTP verification screen
       initiateOtpVerification(data.email, data.name, res.expires_in_seconds || 300, res.attempts_left || 5, res.dev_otp);
-    } else if (selectedRegisterRole === 'DEALER') {
-      alert(res.message || "Dealer registration submitted successfully! Pending Administrator approval.");
+    } else {
+      alert(res.message || "Registration submitted successfully. Please sign in.");
       authMode = "login";
       renderApp();
-    } else {
-      // Fallback
-      alert(res.message);
-      const loginRes = await api.login(data.email, data.password);
-      state.setCurrentUser(loginRes.user);
-      state.setActiveTab('home');
     }
   } catch (err) {
     alert(err.message);
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerText = selectedRegisterRole === 'FARMER' ? 'Send Email OTP & Verify' : 'Complete Registration';
+      submitBtn.innerText = "Send Email OTP & Verify";
     }
   }
 }
 
-function logoutUser() {
-  api.setToken(null);
+function handleForgotPassword() {
+  alert("Password Reset Assistance:\n\nPlease contact your District Procurement Nodal Officer or visit your registered APMC Procurement Centre with your government-issued ID for identity verification and credential assistance.");
+}
+
+async function logoutUser() {
+  try {
+    await api.logout();
+  } catch (e) {
+    api.setToken(null);
+  }
   state.setCurrentUser(null);
+  state.notifications = [];
+  state.unreadNotificationsCount = 0;
+  authMode = "login";
+  window.location.hash = '#login';
+  await renderApp();
+  setTimeout(() => {
+    const em = document.getElementById("login-email");
+    const pw = document.getElementById("login-password");
+    if (em) em.value = "";
+    if (pw) pw.value = "";
+  }, 50);
 }

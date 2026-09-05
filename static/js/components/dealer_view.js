@@ -69,14 +69,17 @@ async function renderDealerView() {
             </div>
           </div>
 
-          <div class="mt-6 flex justify-center">
+          <div class="mt-6 flex justify-center items-center gap-3">
             <button onclick="handleRefreshDealerStatus()" class="btn-agri text-xs py-2.5 px-5 shadow-lg">
               <i data-lucide="refresh-cw" class="w-4 h-4"></i> Check Approval Status
+            </button>
+            <button onclick="logoutUser()" class="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow">
+              <i data-lucide="log-out" class="w-4 h-4"></i> Logout
             </button>
           </div>
 
           <div class="mt-4 text-[11px] text-slate-400">
-            For approval inquiries, please contact the Admin Head at <strong class="text-emerald-600">abhisheksanke999@gmail.com</strong>
+            For approval inquiries, please contact your regional procurement centre or district administrator.
           </div>
 
         </div>
@@ -107,9 +110,14 @@ async function renderDealerView() {
           <p class="text-xs text-amber-100 mt-0.5">License: ${dp.license_number || 'Active'} • Station Active</p>
         </div>
 
-        <button onclick="state.setActiveTab('scan_qr')" class="btn-agri bg-white text-emerald-800 hover:bg-amber-50 text-sm py-3 px-6 shadow-xl font-extrabold flex-shrink-0">
-          <i data-lucide="qr-code" class="w-5 h-5"></i> ${i18n.t('scan_farmer_qr')}
-        </button>
+        <div class="flex items-center gap-2 w-full sm:w-auto">
+          <button onclick="state.setActiveTab('scan_qr')" class="btn-agri bg-white text-emerald-800 hover:bg-amber-50 text-sm py-2.5 px-5 shadow-xl font-extrabold flex-1 sm:flex-none">
+            <i data-lucide="qr-code" class="w-5 h-5"></i> ${i18n.t('scan_farmer_qr')}
+          </button>
+          <button onclick="logoutUser()" class="px-3 py-2.5 bg-red-600/80 hover:bg-red-600 border border-red-400/40 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow">
+            <i data-lucide="log-out" class="w-4 h-4"></i> Logout
+          </button>
+        </div>
       </div>
 
       <!-- Quick Scan Trigger Card -->

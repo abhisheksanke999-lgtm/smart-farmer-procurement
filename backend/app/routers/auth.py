@@ -68,17 +68,20 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
     email_clean = login_data.email.strip().lower()
     user = db.query(User).filter(User.email == email_clean).first()
     
-    # Support admin email aliases (both abhisheksanke999@gmail.com and admin@smartfarmer.gov.in)
-    if not user and email_clean in ["admin@smartfarmer.gov.in", "abhisheksanke999@gmail.com"]:
-        alt_email = "admin@smartfarmer.gov.in" if email_clean == "abhisheksanke999@gmail.com" else "abhisheksanke999@gmail.com"
-        user = db.query(User).filter(User.email == alt_email, User.role == UserRole.ADMIN).first()
-        
     pwd = login_data.password
     if not user or not (verify_password(pwd, user.password_hash) or verify_password(pwd.strip(), user.password_hash)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password"
         )
+    
+    if login_data.role:
+        expected_role = login_data.role.strip().upper()
+        if user.role.upper() != expected_role:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Access denied: Account role is {user.role}, but {expected_role} was selected. Please select the correct role."
+            )
     
     access_token = create_access_token(data={"sub": user.email, "role": user.role, "user_id": user.id})
     user_dict = build_user_dict(user)
@@ -100,27 +103,29 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
     if not register_data.password or len(register_data.password) < 6:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters in length.")
 
+    if register_data.role not in [UserRole.FARMER, UserRole.DEALER]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Direct registration is only permitted for Farmer or Dealer accounts. Admin accounts cannot be self-registered."
+        )
+
     # Check if user already exists
     existing = db.query(User).filter(User.email == email).first()
-    if not existing and email in ["admin@smartfarmer.gov.in", "abhisheksanke999@gmail.com"]:
-        alt_email = "admin@smartfarmer.gov.in" if email == "abhisheksanke999@gmail.com" else "abhisheksanke999@gmail.com"
-        existing = db.query(User).filter(User.email == alt_email, User.role == UserRole.ADMIN).first()
-
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An account with this email address already exists. Please sign in."
         )
 
-    # FARMER REGISTRATION: DO NOT create account immediately. Mandatory Email OTP flow.
-    if register_data.role == UserRole.FARMER:
-        # Generate cryptographically secure 6-digit numeric OTP (100000 - 999999)
-        otp = f"{secrets.randbelow(900000) + 100000:06d}"
-        otp_hash_val = hash_otp(otp)
-        expires_at = datetime.utcnow() + timedelta(minutes=5)
-        password_hash_val = get_password_hash(register_data.password)
+    # Cryptographically secure 6-digit numeric OTP (100000 - 999999)
+    otp = f"{secrets.randbelow(900000) + 100000:06d}"
+    otp_hash_val = hash_otp(otp)
+    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    password_hash_val = get_password_hash(register_data.password)
 
+    if register_data.role == UserRole.FARMER:
         extra_info = {
+            "role": UserRole.FARMER,
             "aadhaar_last4": (register_data.aadhaar_last4 or "").strip()[-4:] if register_data.aadhaar_last4 else "1234",
             "village": register_data.village or "Sample Village",
             "district": register_data.district or "Sample District",
@@ -128,97 +133,56 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
             "ifsc_code": register_data.ifsc_code or "SBIN0001111",
             "land_size_acres": float(register_data.land_size_acres) if register_data.land_size_acres is not None else 2.5
         }
-
-        pending = db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == email).first()
-        if pending:
-            pending.name = register_data.name.strip()
-            pending.phone = phone_digits
-            pending.password_hash = password_hash_val
-            pending.language_preference = register_data.language_preference or "en"
-            pending.extra_data = json.dumps(extra_info)
-            pending.otp_hash = otp_hash_val
-            pending.otp_expires_at = expires_at
-            pending.attempts_left = 5
-            pending.last_sent_at = datetime.utcnow()
-        else:
-            pending = PendingFarmerRegistration(
-                email=email,
-                name=register_data.name.strip(),
-                phone=phone_digits,
-                password_hash=password_hash_val,
-                language_preference=register_data.language_preference or "en",
-                extra_data=json.dumps(extra_info),
-                otp_hash=otp_hash_val,
-                otp_expires_at=expires_at,
-                attempts_left=5,
-                last_sent_at=datetime.utcnow()
-            )
-            db.add(pending)
-
-        db.commit()
-
-        # Send OTP email safely
-        email_res = send_otp_email(to_email=email, recipient_name=register_data.name.strip(), otp_code=otp)
-
-        return {
-            "status": "pending_verification",
-            "message": "OTP verification code sent to your email. Please check your inbox.",
-            "email": email,
-            "expires_in_seconds": 300,
-            "attempts_left": 5
+    else:  # DEALER
+        extra_info = {
+            "role": UserRole.DEALER,
+            "business_name": register_data.business_name or f"{register_data.name} Enterprise",
+            "address": register_data.address or "Procurement Market Road",
+            "government_id_type": register_data.government_id_type or "GSTIN",
+            "government_id_number": register_data.government_id_number or "36AAACG1234H1Z1",
+            "license_number": register_data.license_number or f"LIC-{secrets.token_hex(4).upper()}",
+            "assigned_centre_id": register_data.assigned_centre_id or 1
         }
 
-
-    elif register_data.role == UserRole.DEALER:
-        verification_token = secrets.token_urlsafe(16)
-        new_user = User(
+    pending = db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == email).first()
+    if pending:
+        pending.name = register_data.name.strip()
+        pending.phone = phone_digits
+        pending.password_hash = password_hash_val
+        pending.language_preference = register_data.language_preference or "en"
+        pending.extra_data = json.dumps(extra_info)
+        pending.otp_hash = otp_hash_val
+        pending.otp_expires_at = expires_at
+        pending.attempts_left = 5
+        pending.last_sent_at = datetime.utcnow()
+    else:
+        pending = PendingFarmerRegistration(
+            email=email,
             name=register_data.name.strip(),
-            email=email,
             phone=phone_digits,
-            role=UserRole.DEALER,
-            password_hash=get_password_hash(register_data.password),
-            is_email_verified=False,
-            verification_token=verification_token,
-            verification_expires=datetime.utcnow() + timedelta(hours=24),
-            language_preference=register_data.language_preference
+            password_hash=password_hash_val,
+            language_preference=register_data.language_preference or "en",
+            extra_data=json.dumps(extra_info),
+            otp_hash=otp_hash_val,
+            otp_expires_at=expires_at,
+            attempts_left=5,
+            last_sent_at=datetime.utcnow()
         )
-        db.add(new_user)
-        db.flush()
+        db.add(pending)
 
-        dp = DealerProfile(
-            user_id=new_user.id,
-            business_name=register_data.business_name or f"{register_data.name} Enterprise",
-            mobile_number=phone_digits,
-            email=email,
-            address=register_data.address or "Procurement Market Road",
-            government_id_type=register_data.government_id_type or "GSTIN",
-            government_id_number=register_data.government_id_number or "36AAACG1234H1Z1",
-            license_number=register_data.license_number or f"LIC-{secrets.token_hex(4).upper()}",
-            status=DealerStatus.PENDING,
-            assigned_centre_id=register_data.assigned_centre_id or 1
-        )
-        db.add(dp)
+    db.commit()
 
-        # Notify Admin about new dealer registration
-        admins = db.query(User).filter(User.role == UserRole.ADMIN).all()
-        for admin in admins:
-            db.add(Notification(
-                user_id=admin.id,
-                title="New Dealer Registration Pending",
-                title_te="కొత్త డీలర్ రిజిస్ట్రేషన్ వేచి ఉంది",
-                message=f"Dealer '{register_data.business_name or register_data.name}' submitted registration details. Verification required.",
-                message_te=f"డీలర్ '{register_data.business_name or register_data.name}' రిజిస్ట్రేషన్ సమర్పించారు.",
-                type=NotificationType.APPROVAL
-            ))
+    # Send OTP email safely
+    email_res = send_otp_email(to_email=email, recipient_name=register_data.name.strip(), otp_code=otp)
 
-        db.commit()
-
-        return {
-            "status": "dealer_pending",
-            "message": "Dealer registered successfully. Pending administrator verification.",
-            "verification_token": verification_token,
-            "email": new_user.email
-        }
+    return {
+        "status": "pending_verification",
+        "message": "OTP verification code sent to your email. Please check your inbox.",
+        "email": email,
+        "role": register_data.role,
+        "expires_in_seconds": 300,
+        "attempts_left": 5
+    }
 
 @router.post("/verify-otp")
 def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
@@ -231,7 +195,7 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
             detail="Invalid OTP format. Please enter a valid 6-digit numeric code."
         )
 
-    # Check if farmer is already registered
+    # Check if user is already registered
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
         raise HTTPException(
@@ -275,7 +239,7 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
                 detail="Incorrect OTP code. Maximum attempts exceeded. Please click 'Resend OTP' for a new code."
             )
 
-    # ONLY AFTER SUCCESSFUL OTP VERIFICATION: Create the Farmer account
+    # ONLY AFTER SUCCESSFUL OTP VERIFICATION: Create the account
     extra_data = {}
     if pending.extra_data:
         try:
@@ -283,11 +247,13 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
         except Exception:
             extra_data = {}
 
+    assigned_role = extra_data.get("role", UserRole.FARMER)
+
     new_user = User(
         name=pending.name,
         email=pending.email,
         phone=pending.phone,
-        role=UserRole.FARMER,
+        role=assigned_role,
         password_hash=pending.password_hash,
         is_email_verified=True,
         verification_token=None,
@@ -296,36 +262,79 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
     db.add(new_user)
     db.flush()
 
-    fp = FarmerProfile(
-        user_id=new_user.id,
-        aadhaar_last4=extra_data.get("aadhaar_last4", "1234"),
-        village=extra_data.get("village", "Sample Village"),
-        district=extra_data.get("district", "Sample District"),
-        bank_account_no=extra_data.get("bank_account_no", "99988877711"),
-        ifsc_code=extra_data.get("ifsc_code", "SBIN0001111"),
-        land_size_acres=float(extra_data.get("land_size_acres", 2.5))
-    )
-    db.add(fp)
+    if assigned_role == UserRole.DEALER:
+        dp = DealerProfile(
+            user_id=new_user.id,
+            business_name=extra_data.get("business_name", f"{new_user.name} Enterprise"),
+            mobile_number=new_user.phone,
+            email=new_user.email,
+            address=extra_data.get("address", "Procurement Market Road"),
+            government_id_type=extra_data.get("government_id_type", "GSTIN"),
+            government_id_number=extra_data.get("government_id_number", "36AAACG1234H1Z1"),
+            license_number=extra_data.get("license_number", f"LIC-{secrets.token_hex(4).upper()}"),
+            status=DealerStatus.PENDING,
+            assigned_centre_id=extra_data.get("assigned_centre_id", 1)
+        )
+        db.add(dp)
 
-    # Welcome Notification
-    notif = Notification(
-        user_id=new_user.id,
-        title="Email Verified & Registration Complete ✓",
-        title_te="ఈమెయిల్ ధృవీకరించబడింది & నమోదు పూర్తయింది ✓",
-        message="Welcome to Smart Farmer Procurement! Your email has been verified and your account is active.",
-        message_te="స్మార్ట్ రైతు సేకరణ వ్యవస్థకు స్వాగతం! మీ ఈమెయిల్ ధృవీకరించబడింది మరియు ఖాతా ప్రారంభమైంది.",
-        type=NotificationType.SYSTEM
-    )
-    db.add(notif)
+        admins = db.query(User).filter(User.role == UserRole.ADMIN).all()
+        for admin in admins:
+            db.add(Notification(
+                user_id=admin.id,
+                title="New Dealer Registration Pending",
+                title_te="కొత్త డీలర్ రిజిస్ట్రేషన్ వేచి ఉంది",
+                message=f"Dealer '{dp.business_name}' submitted registration details. Verification required.",
+                message_te=f"డీలర్ '{dp.business_name}' రిజిస్ట్రేషన్ సమర్పించారు.",
+                type=NotificationType.APPROVAL
+            ))
 
-    # Audit Log
-    audit = AuditLog(
-        actor_id=new_user.id,
-        actor_role=UserRole.FARMER,
-        action="FARMER_REGISTERED_WITH_OTP",
-        details=f"Farmer {new_user.email} registered successfully after valid email OTP verification."
-    )
-    db.add(audit)
+        db.add(Notification(
+            user_id=new_user.id,
+            title="Registration Submitted ✓ Pending Admin Approval",
+            title_te="రిజిస్ట్రేషన్ సమర్పించబడింది ✓ నిర్వాహకుని ఆమోదం కోసం వేచి ఉంది",
+            message="Your dealer account has been registered and verified. An administrator will review and activate your license shortly.",
+            message_te="మీ డీలర్ ఖాతా నమోదు చేయబడింది మరియు ధృవీకరించబడింది. నిర్వాహకులు త్వరలోనే సమీక్షిస్తారు.",
+            type=NotificationType.SYSTEM
+        ))
+
+        audit = AuditLog(
+            actor_id=new_user.id,
+            actor_role=UserRole.DEALER,
+            action="DEALER_REGISTERED_WITH_OTP",
+            details=f"Dealer {new_user.email} registered successfully after valid email OTP verification. Status is PENDING."
+        )
+        db.add(audit)
+    else:  # FARMER
+        fp = FarmerProfile(
+            user_id=new_user.id,
+            aadhaar_last4=extra_data.get("aadhaar_last4", "1234"),
+            village=extra_data.get("village", "Sample Village"),
+            district=extra_data.get("district", "Sample District"),
+            bank_account_no=extra_data.get("bank_account_no", "99988877711"),
+            ifsc_code=extra_data.get("ifsc_code", "SBIN0001111"),
+            land_size_acres=float(extra_data.get("land_size_acres", 2.5))
+        )
+        db.add(fp)
+
+        # Welcome Notification
+        notif = Notification(
+            user_id=new_user.id,
+            title="Email Verified & Registration Complete ✓",
+            title_te="ఈమెయిల్ ధృవీకరించబడింది & నమోదు పూర్తయింది ✓",
+            message="Welcome to Smart Farmer Procurement! Your email has been verified and your account is active.",
+            message_te="స్మార్ట్ రైతు సేకరణ వ్యవస్థకు స్వాగతం! మీ ఈమెయిల్ ధృవీకరించబడింది మరియు ఖాతా ప్రారంభమైంది.",
+            type=NotificationType.SYSTEM
+        )
+        db.add(notif)
+
+        # Audit Log
+        audit = AuditLog(
+            actor_id=new_user.id,
+            actor_role=UserRole.FARMER,
+            action="FARMER_REGISTERED_WITH_OTP",
+            details=f"Farmer {new_user.email} registered successfully after valid email OTP verification."
+        )
+        db.add(audit)
 
     # Clean up pending record so OTP can never be reused
     db.delete(pending)
@@ -335,9 +344,11 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
     access_token = create_access_token(data={"sub": new_user.email, "role": new_user.role, "user_id": new_user.id})
     user_dict = build_user_dict(new_user)
 
+    role_msg = "Dealer registration submitted and verified! Waiting for admin approval." if assigned_role == UserRole.DEALER else "Farmer registration completed and email verified successfully! Welcome to Smart Farmer Procurement."
+
     return {
         "status": "success",
-        "message": "Farmer registration completed and email verified successfully! Welcome to Smart Farmer Procurement.",
+        "message": role_msg,
         "is_verified": True,
         "access_token": access_token,
         "token_type": "bearer",
@@ -421,3 +432,7 @@ def verify_email(req: EmailVerificationRequest, db: Session = Depends(get_db)):
 @router.get("/me")
 def get_current_user_profile(current_user: User = Depends(require_user), db: Session = Depends(get_db)):
     return build_user_dict(current_user)
+
+@router.post("/logout")
+def logout():
+    return {"status": "success", "message": "Logged out successfully"}

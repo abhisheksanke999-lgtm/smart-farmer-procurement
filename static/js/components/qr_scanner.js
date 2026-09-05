@@ -81,11 +81,6 @@ async function handleQRImageUpload(e) {
   }
 }
 
-function quickFillAndValidate(code) {
-  const inp = document.getElementById("manual-code-input");
-  if (inp) inp.value = code;
-  validateScannedCode(code);
-}
 
 function renderQRScannerModal() {
   if (state.activeTab !== 'scan_qr') {
@@ -150,21 +145,6 @@ function renderQRScannerModal() {
           </label>
         </div>
 
-        <!-- 1-Click Test Scans -->
-        <div class="mt-5 p-3.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800 text-left">
-          <span class="block text-[11px] font-extrabold uppercase text-emerald-900 dark:text-emerald-300 mb-2">⚡ 1-Click Instant Demo Scans:</span>
-          <div class="flex flex-wrap gap-2">
-            <button type="button" onclick="quickFillAndValidate('PDC-1042')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs transition shadow flex items-center gap-1">
-              <span>🌾 Ramu (Token PDC-1042)</span>
-            </button>
-            <button type="button" onclick="quickFillAndValidate('BOOK-8F72A91C')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition shadow flex items-center gap-1">
-              <span>📋 BOOK-8F72A91C</span>
-            </button>
-            <button type="button" onclick="quickFillAndValidate('PDC-1002')" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-xs transition shadow flex items-center gap-1">
-              <span>🎫 Token PDC-1002</span>
-            </button>
-          </div>
-        </div>
 
         <!-- Manual Input Alternative -->
         <div class="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800 max-w-md mx-auto">

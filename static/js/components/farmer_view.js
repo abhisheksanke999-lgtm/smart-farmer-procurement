@@ -24,9 +24,14 @@ async function renderFarmerView() {
           </p>
         </div>
       </div>
-      <button onclick="handleTriggerEmailVerify()" class="btn-agri gold-gradient text-xs px-4 py-2 flex-shrink-0">
-        <i data-lucide="mail-check" class="w-4 h-4"></i> Verify Email Now
-      </button>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button onclick="handleTriggerEmailVerify()" class="btn-agri gold-gradient text-xs px-4 py-2 flex-shrink-0">
+          <i data-lucide="mail-check" class="w-4 h-4"></i> Verify Email Now
+        </button>
+        <button onclick="logoutUser()" title="Logout" class="px-2.5 py-2 bg-slate-200 hover:bg-red-100 hover:text-red-700 dark:bg-slate-800 dark:hover:bg-red-950 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition flex items-center gap-1">
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Logout
+        </button>
+      </div>
     </div>
   ` : `
     <div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl mb-6 flex items-center justify-between">
@@ -34,7 +39,12 @@ async function renderFarmerView() {
         <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-600"></i>
         ${i18n.t('status_email_verified')} (${user.email})
       </div>
-      <span class="text-[10px] bg-emerald-200 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100 font-extrabold px-2.5 py-0.5 rounded-full uppercase">Active Farmer</span>
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] bg-emerald-200 dark:bg-emerald-800 text-emerald-900 dark:text-emerald-100 font-extrabold px-2.5 py-0.5 rounded-full uppercase">Active Farmer</span>
+        <button onclick="logoutUser()" title="Logout" class="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-950 dark:hover:bg-red-900 dark:text-red-300 rounded-lg text-xs font-bold transition flex items-center gap-1">
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Logout
+        </button>
+      </div>
     </div>
   `;
 
@@ -55,17 +65,24 @@ async function renderFarmerView() {
     <div class="space-y-6">
       
       <!-- Welcome Header Card -->
-      <div class="agri-gradient text-white p-6 rounded-2xl shadow-xl relative overflow-hidden">
+      <div class="agri-gradient text-white p-6 rounded-2xl shadow-xl relative overflow-hidden flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div class="z-10">
+          <span class="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-extrabold uppercase tracking-wider mb-2 inline-block">
+            Telangana State Paddy & Produce Procurement Portal
+          </span>
+          <h2 class="text-2xl sm:text-3xl font-extrabold mb-1">
+            ${i18n.t('welcome_farmer')}, ${user.name}!
+          </h2>
+          <p class="text-xs sm:text-sm text-emerald-100 max-w-xl">
+            Zero Waiting Time • Guaranteed Minimum Support Price (MSP) • Direct Bank Transfer (DBT)
+          </p>
+        </div>
+        <div class="z-10 flex-shrink-0">
+          <button onclick="logoutUser()" class="px-3.5 py-2 bg-red-600/80 hover:bg-red-600 border border-red-400/40 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow">
+            <i data-lucide="log-out" class="w-4 h-4"></i> Logout
+          </button>
+        </div>
         <div class="absolute right-0 bottom-0 opacity-10 font-black text-9xl pointer-events-none select-none">🌾</div>
-        <span class="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-extrabold uppercase tracking-wider mb-2 inline-block">
-          Telangana State Paddy & Produce Procurement Portal
-        </span>
-        <h2 class="text-2xl sm:text-3xl font-extrabold mb-1">
-          ${i18n.t('welcome_farmer')}, ${user.name}!
-        </h2>
-        <p class="text-xs sm:text-sm text-emerald-100 max-w-xl">
-          Zero Waiting Time • Guaranteed Minimum Support Price (MSP) • Direct Bank Transfer (DBT)
-        </p>
       </div>
 
       <!-- Quick Action Grid -->

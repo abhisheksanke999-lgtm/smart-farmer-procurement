@@ -42,16 +42,22 @@ function renderHeader() {
               ` : ''}
             </button>
 
-            <!-- User Avatar & Logout -->
-            <div class="hidden sm:flex items-center gap-2 bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20">
+            <!-- User Avatar & Logout (Desktop) -->
+            <div class="hidden sm:flex items-center gap-3 bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20">
               <div class="text-right">
                 <p class="text-xs font-bold text-white leading-none">${user.name}</p>
                 <span class="text-[10px] font-semibold text-emerald-200 uppercase tracking-wider">${i18n.t('role_' + user.role.toLowerCase())}</span>
               </div>
-              <button onclick="logoutUser()" title="Logout" class="p-1.5 text-emerald-200 hover:text-red-300 transition">
-                <i data-lucide="log-out" class="w-4 h-4"></i>
+              <button onclick="logoutUser()" title="Logout from system" class="flex items-center gap-1 px-2.5 py-1 bg-red-500/30 hover:bg-red-600 border border-red-300/40 text-white rounded-lg text-xs font-bold transition shadow-sm">
+                <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                <span>Logout</span>
               </button>
             </div>
+
+            <!-- Logout Button (Mobile Header) -->
+            <button onclick="logoutUser()" title="Logout" class="sm:hidden p-2 rounded-xl bg-red-500/25 hover:bg-red-500/40 border border-red-300/30 text-white transition flex items-center justify-center">
+              <i data-lucide="log-out" class="w-4 h-4 text-white"></i>
+            </button>
           ` : ''}
         </div>
       </div>
@@ -73,13 +79,15 @@ function renderMobileBottomNav() {
       { id: 'book_slot', icon: 'calendar-plus', label: i18n.t('nav_book_slot') },
       { id: 'live_queue', icon: 'clock', label: i18n.t('nav_queue') },
       { id: 'receipts', icon: 'receipt', label: i18n.t('nav_receipts') },
-      { id: 'payments', icon: 'credit-card', label: i18n.t('nav_payments') }
+      { id: 'payments', icon: 'credit-card', label: i18n.t('nav_payments') },
+      { id: 'logout', icon: 'log-out', label: 'Logout', isLogout: true }
     ];
   } else if (user.role === 'DEALER') {
     items = [
       { id: 'home', icon: 'home', label: i18n.t('nav_home') },
       { id: 'scan_qr', icon: 'qr-code', label: i18n.t('nav_scan_qr') },
-      { id: 'transactions', icon: 'history', label: i18n.t('nav_receipts') }
+      { id: 'transactions', icon: 'history', label: i18n.t('nav_receipts') },
+      { id: 'logout', icon: 'log-out', label: 'Logout', isLogout: true }
     ];
   } else if (user.role === 'ADMIN') {
     items = [
@@ -87,7 +95,7 @@ function renderMobileBottomNav() {
       { id: 'approvals', icon: 'user-check', label: i18n.t('nav_approvals') },
       { id: 'centres', icon: 'warehouse', label: i18n.t('nav_centres') },
       { id: 'admin_payments', icon: 'banknote', label: i18n.t('nav_payments') },
-      { id: 'complaints', icon: 'message-square', label: i18n.t('nav_complaints') }
+      { id: 'logout', icon: 'log-out', label: 'Logout', isLogout: true }
     ];
   }
 
@@ -95,7 +103,7 @@ function renderMobileBottomNav() {
     <nav class="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 shadow-2xl sm:hidden">
       <div class="flex items-center justify-around py-1">
         ${items.map(item => `
-          <button onclick="state.setActiveTab('${item.id}')" class="mobile-nav-item ${activeTab === item.id ? 'active' : ''}">
+          <button onclick="${item.isLogout ? 'logoutUser()' : `state.setActiveTab('${item.id}')`}" class="mobile-nav-item ${activeTab === item.id ? 'active' : ''} ${item.isLogout ? 'text-rose-500 hover:text-rose-700' : ''}">
             <i data-lucide="${item.icon}" class="w-5 h-5 mb-0.5"></i>
             <span>${item.label}</span>
           </button>

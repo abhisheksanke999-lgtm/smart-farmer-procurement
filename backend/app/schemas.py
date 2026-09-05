@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr, Field
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    role: Optional[str] = None
 
 class UserRegister(BaseModel):
     name: str

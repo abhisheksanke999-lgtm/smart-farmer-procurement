@@ -78,10 +78,12 @@ class ApiClient {
   }
 
   // Auth Endpoints
-  async login(email, password) {
+  async login(email, password, role = null) {
+    const payload = { email, password };
+    if (role) payload.role = role;
     const res = await this.request("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify(payload)
     });
     this.setToken(res.access_token);
     try {
@@ -91,6 +93,18 @@ class ApiClient {
       }
     } catch (e) {}
     return res;
+  }
+
+  async logout() {
+    try {
+      if (this.token) {
+        await this.request("/auth/logout", { method: "POST" });
+      }
+    } catch (e) {
+      console.warn("Backend logout notification notice:", e);
+    } finally {
+      this.setToken(null);
+    }
   }
 
   async register(data) {

@@ -58,12 +58,12 @@ Access the application in your browser at:
 
 ---
 
-## 🔑 Seed Test Accounts
+## 🔑 Authentication & Access Control
 
-| Role | Email | Password | Status / Notes |
+| Role | Email | Password | Access Details |
 | :--- | :--- | :--- | :--- |
-| **Government Admin** | `abhisheksanke999@gmail.com` | `AdminPass@123` | Active Government Authority |
-| **Approved Dealer** | `dealer.approved@example.com` | `DealerPass@123` | Assigned to Warangal Centre |
-| **Pending Dealer** | `dealer.pending@example.com` | `DealerPass@123` | Pending Admin Approval |
-| **Verified Farmer** | `ramu.farmer@example.com` | `FarmerPass@123` | Active Token PDC-1042 |
-| **Verified Farmer 2**| `srinivas.farmer@example.com` | `FarmerPass@123` | Completed Procurement & DBT |
+| **Government Admin** | `abhisheksanke999@gmail.com` | `AdminPass@123` | Active Government Authority & Control Centre |
+| **Farmer** | *Registered Email* | *Your Password* | Created via New Registration with real Email OTP verification |
+| **Procurement Dealer**| *Registered Email* | *Your Password* | Created via New Registration with Email OTP verification + Admin License Approval |
+
+> **Security Note**: All dummy/seed farmer and dealer test accounts have been decommissioned. Users register securely using the real Email OTP verification workflow powered by the Resend HTTPS API. Logout is available for every authenticated user across Admin, Farmer, and Dealer dashboards with complete session invalidation.

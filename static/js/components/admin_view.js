@@ -37,6 +37,10 @@ async function renderAdminView() {
           <button onclick="renderApp()" class="px-3 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold border border-white/30 transition">
             Refresh Data
           </button>
+          <button onclick="logoutUser()" class="px-3 py-2 bg-red-600/80 hover:bg-red-600 rounded-xl text-xs font-bold border border-red-400/40 text-white transition flex items-center gap-1.5 shadow">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+            Logout
+          </button>
         </div>
       </div>
 
