@@ -95,6 +95,7 @@ def run_tests():
     # Start background test server
     config = uvicorn.Config(app, host="127.0.0.1", port=TEST_PORT, log_level="error")
     server = uvicorn.Server(config)
+    server.install_signal_handlers = lambda: None
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     time.sleep(1.5)
@@ -310,6 +311,7 @@ def run_tests():
     print("\n" + "=" * 75)
     print("SUCCESS: ALL RESEND HTTP API OTP TESTS PASSED CLEANLY!")
     print("=" * 75)
+    os._exit(0)
 
 if __name__ == "__main__":
     run_tests()
