@@ -1,5 +1,6 @@
 # Environment & Secrets (NEVER COMMIT SENSITIVE CREDENTIALS)
 .env
+.env*
 .env.local
 .env.*.local
 cloudflared.exe

@@ -9,11 +9,29 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User, UserRole, FarmerProfile, DealerProfile, DealerStatus, Notification, NotificationType, AuditLog, PendingFarmerRegistration
 from ..schemas import UserLogin, UserRegister, TokenResponse, EmailVerificationRequest, OTPVerifyRequest, OTPResendRequest
+from email_validator import validate_email, EmailNotValidError
 from ..auth import get_password_hash, verify_password, create_access_token, require_user
-from ..email_service import send_otp_email
+from ..email_service import send_otp_email, EmailDeliveryError
 from ..config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+def validate_and_normalize_email(email_str: str) -> str:
+    """Validates email format and normalizes it. Rejects empty, malformed, or invalid emails."""
+    if not email_str or not isinstance(email_str, str) or not email_str.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email address is required."
+        )
+    clean_email = email_str.strip().lower()
+    try:
+        valid = validate_email(clean_email, check_deliverability=False)
+        return valid.normalized
+    except EmailNotValidError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please enter a valid email address."
+        )
 
 def hash_otp(otp: str) -> str:
     """Cryptographically hash a 6-digit OTP using HMAC-SHA256 with server SECRET_KEY."""
@@ -90,7 +108,7 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
 
 @router.post("/register")
 def register(register_data: UserRegister, db: Session = Depends(get_db)):
-    email = register_data.email.strip().lower()
+    email = validate_and_normalize_email(register_data.email)
     
     # Validate registration fields
     if not register_data.name or len(register_data.name.strip()) < 2:
@@ -170,12 +188,25 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
         )
         db.add(pending)
 
+    # Dispatch email via Resend HTTPS API before committing transaction
+    try:
+        send_otp_email(to_email=email, recipient_name=register_data.name.strip(), otp_code=otp)
+    except EmailDeliveryError as ede:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to deliver verification email: {str(ede)}"
+        )
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while sending verification email. Please try again."
+        )
+
     db.commit()
 
-    # Send OTP email safely
-    email_res = send_otp_email(to_email=email, recipient_name=register_data.name.strip(), otp_code=otp)
-
-    resp = {
+    return {
         "status": "pending_verification",
         "message": "OTP verification code sent to your email. Please check your inbox.",
         "email": email,
@@ -183,14 +214,10 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
         "expires_in_seconds": 300,
         "attempts_left": 5
     }
-    if email_res.get("status") == "fallback" or email_res.get("otp_code"):
-        resp["dev_otp"] = otp
-        resp["delivery_note"] = "Instant OTP code available for immediate verification."
-    return resp
 
 @router.post("/verify-otp")
 def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
-    email = req.email.strip().lower()
+    email = validate_and_normalize_email(req.email)
     entered_otp = req.otp.strip()
 
     if not entered_otp or len(entered_otp) != 6 or not entered_otp.isdigit():
@@ -361,7 +388,7 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
 
 @router.post("/resend-otp")
 def resend_otp(req: OTPResendRequest, db: Session = Depends(get_db)):
-    email = req.email.strip().lower()
+    email = validate_and_normalize_email(req.email)
 
     # Check if already registered
     existing_user = db.query(User).filter(User.email == email).first()
@@ -378,38 +405,48 @@ def resend_otp(req: OTPResendRequest, db: Session = Depends(get_db)):
             detail="No pending registration found for this email address. Please register first."
         )
 
-    # Rate limiting: 30 seconds cooldown between resends
+    # Rate limiting: 60 seconds cooldown between resends
     if pending.last_sent_at:
         seconds_elapsed = (datetime.utcnow() - pending.last_sent_at).total_seconds()
-        if seconds_elapsed < 30:
-            remaining_cooldown = int(30 - seconds_elapsed)
+        if seconds_elapsed < 60:
+            remaining_cooldown = int(60 - seconds_elapsed)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Please wait {remaining_cooldown} seconds before requesting a new OTP."
             )
 
-    # Invalidate previous OTP and generate new 6-digit OTP (Requirement 11)
+    # Invalidate previous OTP and generate new 6-digit OTP
     new_otp = f"{secrets.randbelow(900000) + 100000:06d}"
     pending.otp_hash = hash_otp(new_otp)
     pending.otp_expires_at = datetime.utcnow() + timedelta(minutes=5)
     pending.attempts_left = 5
     pending.last_sent_at = datetime.utcnow()
+
+    # Send email via Resend HTTPS API before committing transaction
+    try:
+        send_otp_email(to_email=pending.email, recipient_name=pending.name, otp_code=new_otp)
+    except EmailDeliveryError as ede:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to deliver verification email: {str(ede)}"
+        )
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while sending verification email. Please try again."
+        )
+
     db.commit()
 
-    # Send email
-    email_res = send_otp_email(to_email=pending.email, recipient_name=pending.name, otp_code=new_otp)
-
-    resp = {
+    return {
         "status": "sent",
         "message": "A new verification OTP code has been sent to your email address.",
         "email": pending.email,
         "expires_in_seconds": 300,
         "attempts_left": 5
     }
-    if email_res.get("status") == "fallback" or email_res.get("otp_code"):
-        resp["dev_otp"] = new_otp
-        resp["delivery_note"] = "Instant OTP code available for immediate verification."
-    return resp
 
 
 @router.post("/verify-email")

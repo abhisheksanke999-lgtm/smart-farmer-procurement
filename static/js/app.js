@@ -205,7 +205,7 @@ function selectRegisterRole(role) {
   renderApp();
 }
 
-function initiateOtpVerification(email, name, expiresInSeconds = 300, attemptsAllowed = 5, devOtp = null) {
+function initiateOtpVerification(email, name, expiresInSeconds = 300, attemptsAllowed = 5) {
   if (otpVerificationState.timerInterval) clearInterval(otpVerificationState.timerInterval);
   if (otpVerificationState.cooldownInterval) clearInterval(otpVerificationState.cooldownInterval);
 
@@ -215,8 +215,7 @@ function initiateOtpVerification(email, name, expiresInSeconds = 300, attemptsAl
     name: name,
     secondsLeft: expiresInSeconds,
     attemptsLeft: attemptsAllowed,
-    resendCooldown: 30,
-    devOtp: devOtp,
+    resendCooldown: 60,
     errorMessage: "",
     successMessage: "",
     isVerifying: false,
@@ -244,7 +243,7 @@ function initiateOtpVerification(email, name, expiresInSeconds = 300, attemptsAl
     }
   }, 1000);
 
-  // 30s Cooldown timer for Resend button
+  // 60s Cooldown timer for Resend button
   otpVerificationState.cooldownInterval = setInterval(() => {
     if (otpVerificationState.resendCooldown > 0) {
       otpVerificationState.resendCooldown -= 1;
@@ -284,19 +283,6 @@ function handleOtpInput(input) {
   const btn = document.getElementById("btn-verify-otp");
   if (btn && otpVerificationState.secondsLeft > 0 && otpVerificationState.attemptsLeft > 0) {
     btn.disabled = input.value.length !== 6;
-  }
-}
-
-function autoFillOtp(code) {
-  otpVerificationState.enteredOtp = code;
-  const inp = document.getElementById("otp-input");
-  const btn = document.getElementById("btn-verify-otp");
-  if (inp) {
-    inp.value = code;
-    inp.focus();
-  }
-  if (btn && otpVerificationState.secondsLeft > 0 && otpVerificationState.attemptsLeft > 0) {
-    btn.disabled = code.length !== 6;
   }
 }
 
@@ -384,9 +370,8 @@ async function handleResendOtp() {
     otpVerificationState.isResending = false;
     otpVerificationState.secondsLeft = res.expires_in_seconds || 300;
     otpVerificationState.attemptsLeft = res.attempts_left || 5;
-    otpVerificationState.resendCooldown = 30;
+    otpVerificationState.resendCooldown = 60;
     otpVerificationState.enteredOtp = "";
-    if (res.dev_otp) otpVerificationState.devOtp = res.dev_otp;
     otpVerificationState.successMessage = res.message || "A new 6-digit verification code has been sent to your email!";
     renderApp();
     setTimeout(() => {
@@ -461,24 +446,6 @@ function renderOtpVerificationCard() {
         <div class="p-3 mb-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 shadow-sm">
           <i data-lucide="check-circle-2" class="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400"></i>
           <div class="flex-1 font-medium">${escapeHtml(otpVerificationState.successMessage)}</div>
-        </div>
-      ` : ''}
-
-      <!-- Instant Backup OTP Banner (if email delivery is delayed) -->
-      ${otpVerificationState.devOtp ? `
-        <div class="p-3 mb-4 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700/70 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between gap-2 shadow-sm">
-          <div class="flex items-center gap-2 min-w-0">
-            <i data-lucide="key" class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0"></i>
-            <div class="truncate">
-              <span class="font-bold">Instant Code:</span>
-              <span class="font-mono text-sm font-extrabold tracking-widest text-amber-900 dark:text-amber-100 ml-1.5 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/60 rounded border border-amber-300 dark:border-amber-700 select-all">${escapeHtml(otpVerificationState.devOtp)}</span>
-            </div>
-          </div>
-          <button type="button"
-                  onclick="autoFillOtp('${escapeHtml(otpVerificationState.devOtp)}')"
-                  class="px-2.5 py-1 text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition shrink-0 shadow">
-            Auto-Fill
-          </button>
         </div>
       ` : ''}
 
@@ -752,7 +719,7 @@ async function handleAuthRegisterSubmit(e) {
 
     if (res.status === "pending_verification") {
       // Initiate dedicated OTP verification screen
-      initiateOtpVerification(data.email, data.name, res.expires_in_seconds || 300, res.attempts_left || 5, res.dev_otp);
+      initiateOtpVerification(data.email, data.name, res.expires_in_seconds || 300, res.attempts_left || 5);
     } else {
       alert(res.message || "Registration submitted successfully. Please sign in.");
       authMode = "login";

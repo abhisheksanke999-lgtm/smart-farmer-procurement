@@ -11,16 +11,10 @@ class Settings(BaseSettings):
     # SQLite Database Path
     DATABASE_URL: str = "sqlite:///./farmer_procurement.db"
 
-    # SMTP Configuration
-    SMTP_SERVER: str = "smtp.gmail.com"
-    SMTP_PORT: int = 465
-    SMTP_USERNAME: str = "abhisheksanke999@gmail.com"
-    SMTP_PASSWORD: str = "jgla ooje fzes plqp"
-    SMTP_FROM: str = "abhisheksanke999@gmail.com"
-    SMTP_USE_TLS: bool = False
-
-    # Cloud HTTP Email API (Resend / Brevo)
+    # Resend HTTPS API Configuration
     RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "Smart Farmer <onboarding@resend.dev>"
+
 
 
     class Config:
