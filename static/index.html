@@ -8,8 +8,31 @@
   <meta name="description"
     content="Production-quality mobile-first Farmer Procurement Management Application reducing waiting time, congestion, and payment confusion.">
 
-  <!-- Tailwind CSS CDN -->
+  <!-- Tailwind CSS Dark Mode Class Strategy & CDN -->
+  <script>
+    tailwind = {
+      config: {
+        darkMode: 'class'
+      }
+    };
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Early Theme Initialization (Prevents White Flash / FOUC) -->
+  <script>
+    (function() {
+      try {
+        var key = 'sf_theme_preference';
+        var saved = localStorage.getItem(key);
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved === 'dark' || (!saved && prefersDark)) {
+          document.documentElement.classList.add('dark', 'dark-mode');
+        } else {
+          document.documentElement.classList.remove('dark', 'dark-mode');
+        }
+      } catch (e) {}
+    })();
+  </script>
 
   <!-- Google Fonts: Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,7 +54,7 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css">
+  <link rel="stylesheet" href="/static/css/styles.css?v=5.1">
 </head>
 
 <body
@@ -41,9 +64,10 @@
   <div id="app" class="min-h-screen flex flex-col justify-between"></div>
 
   <!-- JavaScript Modules -->
-  <script src="/static/js/i18n.js?v=5.0"></script>
-  <script src="/static/js/api.js?v=5.0"></script>
-  <script src="/static/js/state.js?v=5.0"></script>
+  <script src="/static/js/theme.js?v=5.1"></script>
+  <script src="/static/js/i18n.js?v=5.1"></script>
+  <script src="/static/js/api.js?v=5.1"></script>
+  <script src="/static/js/state.js?v=5.1"></script>
 
   <!-- UI Components -->
   <script src="/static/js/components/navbar.js?v=5.0"></script>

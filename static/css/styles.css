@@ -5,9 +5,12 @@
   --primary-light: #d1fae5;
   --secondary: #d97706;
   --secondary-light: #fef3c7;
-  --bg-dark: #0f172a;
-  --surface-dark: #1e293b;
-  --card-dark: #334155;
+  --bg-light: #f8fafc;
+  --text-light: #0f172a;
+  --bg-dark: #090e1a;
+  --surface-dark: #131d31;
+  --card-dark: #1e293b;
+  --border-dark: #334155;
   --text-dark: #f8fafc;
   --text-muted: #94a3b8;
   --success: #10b981;
@@ -16,13 +19,25 @@
   --accent-gold: #fbbf24;
 }
 
-body {
-  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background-color: #f8fafc;
-  color: #0f172a;
-  -webkit-tap-highlight-color: transparent;
+/* Subtle theme transition */
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease !important;
+  transition-delay: 0s !important;
 }
 
+body {
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-light);
+  color: var(--text-light);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+html.dark body,
+body.dark,
 body.dark-mode {
   background-color: var(--bg-dark);
   color: var(--text-dark);
@@ -30,17 +45,20 @@ body.dark-mode {
 
 /* Glassmorphism Cards */
 .glass-card {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.90);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  border: 1px solid rgba(226, 232, 240, 0.85);
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
   border-radius: 1rem;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+html.dark .glass-card,
 body.dark-mode .glass-card {
-  background: rgba(30, 41, 59, 0.85);
-  border: 1px solid rgba(51, 65, 85, 0.8);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+  background: rgba(24, 34, 53, 0.90);
+  border: 1px solid rgba(51, 65, 85, 0.85);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.45);
+  color: #f8fafc;
 }
 
 /* Agriculture Gradient Header */
@@ -114,6 +132,7 @@ body.dark-mode .mobile-nav-item.active {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .badge-approved, .badge-completed, .badge-verified {
@@ -129,6 +148,150 @@ body.dark-mode .mobile-nav-item.active {
 .badge-rejected, .badge-suspended, .badge-failed, .badge-cancelled {
   background-color: #fee2e2;
   color: #991b1b;
+}
+
+html.dark .badge-approved, html.dark .badge-completed, html.dark .badge-verified,
+body.dark-mode .badge-approved, body.dark-mode .badge-completed, body.dark-mode .badge-verified {
+  background-color: rgba(6, 95, 70, 0.35);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+html.dark .badge-pending, html.dark .badge-waiting, html.dark .badge-processing,
+body.dark-mode .badge-pending, body.dark-mode .badge-waiting, body.dark-mode .badge-processing {
+  background-color: rgba(120, 53, 15, 0.35);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+html.dark .badge-rejected, html.dark .badge-suspended, html.dark .badge-failed, html.dark .badge-cancelled,
+body.dark-mode .badge-rejected, body.dark-mode .badge-suspended, body.dark-mode .badge-failed, body.dark-mode .badge-cancelled {
+  background-color: rgba(127, 29, 29, 0.35);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* Dark Mode Form Inputs & Selects */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+html.dark select,
+html.dark textarea,
+body.dark-mode input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+body.dark-mode select,
+body.dark-mode textarea {
+  background-color: #172236;
+  color: #f8fafc;
+  border-color: #334155;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder,
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder {
+  color: #64748b;
+}
+
+html.dark select option,
+body.dark-mode select option {
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+/* Dark Mode Tables */
+html.dark table thead th,
+body.dark-mode table thead th {
+  color: #94a3b8;
+}
+
+html.dark table tbody tr,
+body.dark-mode table tbody tr {
+  border-color: #1e293b;
+}
+
+html.dark table tbody tr:hover,
+body.dark-mode table tbody tr:hover {
+  background-color: rgba(30, 41, 59, 0.45);
+}
+
+/* High Contrast Overrides for Dark Mode */
+html.dark .text-slate-900,
+body.dark-mode .text-slate-900 {
+  color: #f8fafc;
+}
+
+html.dark .text-slate-800,
+body.dark-mode .text-slate-800 {
+  color: #f1f5f9;
+}
+
+html.dark .text-slate-700,
+body.dark-mode .text-slate-700 {
+  color: #cbd5e1;
+}
+
+html.dark .border-slate-200,
+body.dark-mode .border-slate-200 {
+  border-color: #334155;
+}
+
+html.dark .border-slate-300,
+body.dark-mode .border-slate-300 {
+  border-color: #475569;
+}
+
+html.dark .bg-slate-50,
+body.dark-mode .bg-slate-50 {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+}
+
+html.dark .bg-slate-100,
+body.dark-mode .bg-slate-100 {
+  background-color: rgba(51, 65, 85, 0.4) !important;
+}
+
+html.dark .bg-emerald-100:not(.theme-exempt),
+body.dark-mode .bg-emerald-100:not(.theme-exempt) {
+  background-color: rgba(6, 95, 70, 0.35);
+  color: #6ee7b7;
+}
+
+html.dark .bg-red-100:not(.theme-exempt),
+body.dark-mode .bg-red-100:not(.theme-exempt) {
+  background-color: rgba(127, 29, 29, 0.35);
+  color: #fca5a5;
+}
+
+html.dark .bg-amber-100:not(.theme-exempt),
+body.dark-mode .bg-amber-100:not(.theme-exempt) {
+  background-color: rgba(120, 53, 15, 0.35);
+  color: #fcd34d;
+}
+
+html.dark .bg-blue-100:not(.theme-exempt),
+body.dark-mode .bg-blue-100:not(.theme-exempt) {
+  background-color: rgba(30, 58, 138, 0.35);
+  color: #93c5fd;
+}
+
+/* Password Toggle and Interactive Buttons */
+.password-toggle-btn {
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.password-toggle-btn:hover {
+  opacity: 0.9;
+}
+
+.password-toggle-btn:focus-visible {
+  outline: 2px solid #10b981;
+  outline-offset: 2px;
+}
+
+.theme-toggle-btn {
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
 }
 
 /* Real-time Queue Pulse Animation */
@@ -163,6 +326,7 @@ body.dark-mode .mobile-nav-item.active {
   background: #cbd5e1;
   border-radius: 4px;
 }
+html.dark ::-webkit-scrollbar-thumb,
 body.dark-mode ::-webkit-scrollbar-thumb {
   background: #475569;
 }

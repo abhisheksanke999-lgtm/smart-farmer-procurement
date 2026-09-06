@@ -2,6 +2,7 @@ function renderHeader() {
   const user = state.currentUser;
   const lang = i18n.currentLang;
   const unread = state.unreadNotificationsCount;
+  const isDark = (typeof themeManager !== 'undefined') ? themeManager.getTheme() === 'dark' : false;
 
   return `
     <header class="agri-gradient text-white sticky top-0 z-40 shadow-lg">
@@ -18,9 +19,25 @@ function renderHeader() {
           </div>
         </div>
 
-        <!-- Controls: Language Toggle, Notifications, Profile & Logout -->
-        <div class="flex items-center gap-2 sm:gap-4">
+        <!-- Controls: Theme Toggle, Language Toggle, Notifications, Profile & Logout -->
+        <div class="flex items-center gap-2 sm:gap-3">
           
+          <!-- Dark Mode / Light Mode Switch -->
+          <button type="button"
+                  onclick="themeManager.toggleTheme()"
+                  class="theme-toggle-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/20 hover:bg-black/30 backdrop-blur-md border border-white/20 text-xs font-semibold text-white transition shadow-sm active:scale-95"
+                  aria-label="${isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}"
+                  title="${isDark ? 'Switch to Light Mode (☀️)' : 'Switch to Dark Mode (🌙)'}">
+            <span class="theme-toggle-icon flex items-center justify-center">
+              ${isDark
+                ? '<i data-lucide="sun" class="w-4 h-4 text-amber-300"></i>'
+                : '<i data-lucide="moon" class="w-4 h-4 text-emerald-100"></i>'}
+            </span>
+            <span class="theme-toggle-label hidden sm:inline font-bold">
+              ${isDark ? 'Light' : 'Dark'}
+            </span>
+          </button>
+
           <!-- Language Toggle Switcher -->
           <div class="bg-black/20 backdrop-blur-md p-1 rounded-lg border border-white/20 flex items-center text-xs font-semibold">
             <button onclick="i18n.setLanguage('en')" class="px-2 py-1 rounded ${lang === 'en' ? 'bg-white text-emerald-800 font-bold shadow' : 'text-emerald-100 hover:text-white'} transition">

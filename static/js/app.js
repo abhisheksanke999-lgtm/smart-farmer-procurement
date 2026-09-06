@@ -123,10 +123,14 @@ async function renderApp() {
       `;
     }
 
-    // Re-initialize Lucide Icons
+    // Re-initialize Lucide Icons & Theme UI
     if (window.lucide) {
       lucide.createIcons();
     }
+    if (typeof themeManager !== 'undefined') {
+      themeManager.updateToggleUI();
+    }
+    enhancePasswordFields();
   } catch (err) {
     console.error("renderApp error:", err);
   } finally {
@@ -594,7 +598,12 @@ function renderAuthModal() {
               <label class="block font-bold text-slate-700 dark:text-slate-300">Password</label>
               <button type="button" onclick="handleForgotPassword()" class="text-[11px] text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-semibold transition">Forgot Password?</button>
             </div>
-            <input type="password" id="login-password" name="login_password" placeholder="Enter your password" value="" required autocomplete="new-password" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <div class="relative flex items-center">
+              <input type="password" id="login-password" name="login_password" placeholder="Enter your password" value="" required autocomplete="new-password" class="w-full pl-4 pr-11 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition">
+              <button type="button" id="toggle-login-password" onclick="togglePasswordVisibility('login-password', 'toggle-login-password')" aria-label="Show password" title="Show password" class="password-toggle-btn absolute right-2.5 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition focus:outline-none flex items-center justify-center rounded-lg">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+              </button>
+            </div>
           </div>
 
           <button id="btn-login-submit" type="submit" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
@@ -636,7 +645,12 @@ function renderAuthModal() {
 
           <div>
             <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Password</label>
-            <input type="password" id="reg-password" placeholder="Create Secure Password (min 6 chars)" value="" minlength="6" required autocomplete="off" class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
+            <div class="relative flex items-center">
+              <input type="password" id="reg-password" placeholder="Create Secure Password (min 6 chars)" value="" minlength="6" required autocomplete="off" class="w-full pl-4 pr-11 py-2 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500 outline-none transition">
+              <button type="button" id="toggle-reg-password" onclick="togglePasswordVisibility('reg-password', 'toggle-reg-password')" aria-label="Show password" title="Show password" class="password-toggle-btn absolute right-2.5 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition focus:outline-none flex items-center justify-center rounded-lg">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+              </button>
+            </div>
           </div>
 
           ${selectedRegisterRole === 'DEALER' ? `
@@ -820,4 +834,78 @@ async function logoutUser() {
     if (em) em.value = "";
     if (pw) pw.value = "";
   }, 50);
+}
+
+/**
+ * Toggle visibility of password input fields
+ */
+function togglePasswordVisibility(inputId, btnId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+
+  const btn = document.getElementById(btnId) || input.parentElement?.querySelector('.password-toggle-btn');
+  const isCurrentlyPassword = input.type === 'password';
+
+  input.type = isCurrentlyPassword ? 'text' : 'password';
+
+  if (btn) {
+    const newLabel = isCurrentlyPassword ? 'Hide password' : 'Show password';
+    btn.setAttribute('aria-label', newLabel);
+    btn.setAttribute('title', newLabel);
+    btn.innerHTML = isCurrentlyPassword
+      ? '<i data-lucide="eye-off" class="w-4 h-4"></i>'
+      : '<i data-lucide="eye" class="w-4 h-4"></i>';
+
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+      lucide.createIcons();
+    }
+  }
+}
+
+/**
+ * Universal password field enhancer to ensure any password input
+ * (Login, Register, Reset, Change Password) has a responsive eye toggle.
+ */
+function enhancePasswordFields() {
+  const passwordInputs = document.querySelectorAll('input[type="password"], input[data-has-password-toggle="true"]');
+  passwordInputs.forEach((input) => {
+    if (input.dataset.toggleInitialized === 'true') return;
+
+    let btn = input.parentElement?.querySelector('.password-toggle-btn');
+    if (!btn) {
+      if (!input.id) {
+        input.id = 'pwd-' + Math.random().toString(36).substr(2, 9);
+      }
+
+      const parent = input.parentElement;
+      if (parent && !parent.classList.contains('relative')) {
+        parent.classList.add('relative');
+      }
+
+      input.classList.add('pr-11');
+
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'password-toggle-btn absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition focus:outline-none flex items-center justify-center rounded-lg';
+      btn.setAttribute('aria-label', input.type === 'password' ? 'Show password' : 'Hide password');
+      btn.setAttribute('title', input.type === 'password' ? 'Show password' : 'Hide password');
+      btn.innerHTML = input.type === 'password'
+        ? '<i data-lucide="eye" class="w-4 h-4"></i>'
+        : '<i data-lucide="eye-off" class="w-4 h-4"></i>';
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePasswordVisibility(input.id, null);
+      });
+
+      input.insertAdjacentElement('afterend', btn);
+    }
+    input.dataset.toggleInitialized = 'true';
+    input.dataset.hasPasswordToggle = 'true';
+  });
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
 }
