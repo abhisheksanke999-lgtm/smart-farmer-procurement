@@ -40,82 +40,123 @@ def seed_database():
             admin.is_email_verified = True
             db.flush()
 
-        # 2. Ensure Procurement Centres exist
-        existing_centres = db.query(ProcurementCentre).count()
-        centre_instances = []
-        if existing_centres == 0:
-            print("Initializing standard Procurement Centres...")
-            centres_data = [
-                {
-                    "name": "Warangal Central Grain Mandi",
-                    "code": "WGL-01",
-                    "location": "Enumamula Market Yard, Warangal",
-                    "district": "Warangal",
-                    "pincode": "506002",
-                    "contact_phone": "+91 870 245 8890",
-                    "daily_capacity": 120,
-                    "operating_hours": "07:30 AM - 05:00 PM"
-                },
-                {
-                    "name": "Nizamabad Commodity Procurement Hub",
-                    "code": "NZB-02",
-                    "location": "APMC Yard, Malapally, Nizamabad",
-                    "district": "Nizamabad",
-                    "pincode": "503001",
-                    "contact_phone": "+91 846 223 4511",
-                    "daily_capacity": 150,
-                    "operating_hours": "08:00 AM - 06:00 PM"
-                },
-                {
-                    "name": "Guntur Chili & Cotton Market Yard",
-                    "code": "GNT-03",
-                    "location": "Mirchi Yard Complex, Guntur",
-                    "district": "Guntur",
-                    "pincode": "522004",
-                    "contact_phone": "+91 863 228 9012",
-                    "daily_capacity": 100,
-                    "operating_hours": "08:00 AM - 04:30 PM"
-                },
-                {
-                    "name": "Karimnagar Paddy Procurement Centre",
-                    "code": "KMN-04",
-                    "location": "Collectorate Road, Karimnagar",
-                    "district": "Karimnagar",
-                    "pincode": "505001",
-                    "contact_phone": "+91 878 224 1120",
-                    "daily_capacity": 90,
-                    "operating_hours": "08:30 AM - 05:00 PM"
-                }
-            ]
+        # 2. Ensure Procurement Centres exist (including Bhimavaram, Palakollu, Tanuku)
+        standard_centres = [
+            {
+                "name": "Bhimavaram Procurement Center",
+                "code": "BV-05",
+                "location": "Bhimavaram Market Yard, West Godavari",
+                "district": "West Godavari",
+                "pincode": "534201",
+                "contact_phone": "+91 881 622 4567",
+                "daily_capacity": 150,
+                "operating_hours": "07:30 AM - 05:30 PM",
+                "supported_crops": "Rice,Paddy,Cotton"
+            },
+            {
+                "name": "Palakollu Procurement Center",
+                "code": "PK-06",
+                "location": "Palakollu Agricultural Yard, West Godavari",
+                "district": "West Godavari",
+                "pincode": "534260",
+                "contact_phone": "+91 881 422 7890",
+                "daily_capacity": 120,
+                "operating_hours": "08:00 AM - 05:00 PM",
+                "supported_crops": "Rice,Paddy,Maize"
+            },
+            {
+                "name": "Tanuku Procurement Center",
+                "code": "TK-07",
+                "location": "Tanuku APMC Mandi, West Godavari",
+                "district": "West Godavari",
+                "pincode": "534211",
+                "contact_phone": "+91 881 922 3412",
+                "daily_capacity": 100,
+                "operating_hours": "08:00 AM - 05:00 PM",
+                "supported_crops": "Rice,Paddy"
+            },
+            {
+                "name": "Warangal Central Grain Mandi",
+                "code": "WGL-01",
+                "location": "Enumamula Market Yard, Warangal",
+                "district": "Warangal",
+                "pincode": "506002",
+                "contact_phone": "+91 870 245 8890",
+                "daily_capacity": 120,
+                "operating_hours": "07:30 AM - 05:00 PM",
+                "supported_crops": "Rice,Paddy,Cotton,Maize,Chilli"
+            },
+            {
+                "name": "Nizamabad Commodity Procurement Hub",
+                "code": "NZB-02",
+                "location": "APMC Yard, Malapally, Nizamabad",
+                "district": "Nizamabad",
+                "pincode": "503001",
+                "contact_phone": "+91 846 223 4511",
+                "daily_capacity": 150,
+                "operating_hours": "08:00 AM - 06:00 PM",
+                "supported_crops": "Rice,Paddy,Maize,Cotton"
+            },
+            {
+                "name": "Guntur Chili & Cotton Market Yard",
+                "code": "GNT-03",
+                "location": "Mirchi Yard Complex, Guntur",
+                "district": "Guntur",
+                "pincode": "522004",
+                "contact_phone": "+91 863 228 9012",
+                "daily_capacity": 100,
+                "operating_hours": "08:00 AM - 04:30 PM",
+                "supported_crops": "Chilli,Cotton"
+            },
+            {
+                "name": "Karimnagar Paddy Procurement Centre",
+                "code": "KMN-04",
+                "location": "Collectorate Road, Karimnagar",
+                "district": "Karimnagar",
+                "pincode": "505001",
+                "contact_phone": "+91 878 224 1120",
+                "daily_capacity": 90,
+                "operating_hours": "08:30 AM - 05:00 PM",
+                "supported_crops": "Rice,Paddy"
+            }
+        ]
 
-            for c in centres_data:
-                pc = ProcurementCentre(**c)
+        for c_data in standard_centres:
+            existing = db.query(ProcurementCentre).filter(ProcurementCentre.code == c_data["code"]).first()
+            if not existing:
+                pc = ProcurementCentre(**c_data)
                 db.add(pc)
-                centre_instances.append(pc)
-            db.flush()
-        else:
-            centre_instances = db.query(ProcurementCentre).all()
+                db.flush()
+            else:
+                if not existing.supported_crops:
+                    existing.supported_crops = c_data["supported_crops"]
+                    db.flush()
 
-        # 3. Ensure Slots exist for centres
-        existing_slots = db.query(Slot).count()
-        if existing_slots == 0 and centre_instances:
-            print("Initializing standard time slots...")
-            today = datetime.now().date()
-            dates = [
-                today.strftime("%Y-%m-%d"),
-                (today + timedelta(days=1)).strftime("%Y-%m-%d"),
-                (today + timedelta(days=2)).strftime("%Y-%m-%d")
-            ]
-            time_slots = [
-                ("08:00 AM", "10:00 AM"),
-                ("10:00 AM", "12:00 PM"),
-                ("01:00 PM", "03:00 PM"),
-                ("03:00 PM", "05:00 PM")
-            ]
+        all_centres = db.query(ProcurementCentre).all()
 
-            for pc in centre_instances:
-                for d in dates:
-                    for start, end in time_slots:
+        # 3. Ensure Slots exist for all active centres
+        today = datetime.now().date()
+        dates = [
+            today.strftime("%Y-%m-%d"),
+            (today + timedelta(days=1)).strftime("%Y-%m-%d"),
+            (today + timedelta(days=2)).strftime("%Y-%m-%d")
+        ]
+        time_slots = [
+            ("08:00 AM", "10:00 AM"),
+            ("10:00 AM", "12:00 PM"),
+            ("01:00 PM", "03:00 PM"),
+            ("03:00 PM", "05:00 PM")
+        ]
+
+        for pc in all_centres:
+            for d in dates:
+                for start, end in time_slots:
+                    slot_exists = db.query(Slot).filter(
+                        Slot.centre_id == pc.id,
+                        Slot.date == d,
+                        Slot.start_time == start
+                    ).first()
+                    if not slot_exists:
                         slot = Slot(
                             centre_id=pc.id,
                             date=d,
@@ -125,7 +166,7 @@ def seed_database():
                             booked_count=0
                         )
                         db.add(slot)
-            db.flush()
+        db.flush()
 
         # 4. Ensure System Audit Log exists
         init_audit = db.query(AuditLog).filter(AuditLog.action == "SYSTEM_INIT").first()

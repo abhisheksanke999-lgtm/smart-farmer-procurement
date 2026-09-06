@@ -107,7 +107,10 @@ async function renderDealerView() {
             Verified Procurement Dealer
           </span>
           <h2 class="text-2xl font-extrabold">${dp.business_name || user.business_name || user.name}</h2>
-          <p class="text-xs text-amber-100 mt-0.5">License: ${dp.license_number || 'Active'} • Station Active</p>
+          <p class="text-xs text-amber-100 mt-1 font-medium">
+            Assigned Procurement Centre: <strong class="underline font-bold">${escapeHtml(dp.assigned_centre_name || user.assigned_centre_name || 'Assigned Center')}</strong>
+          </p>
+          <p class="text-[11px] text-amber-200/90 mt-0.5 font-mono">License: ${dp.license_number || 'Active'} • Station Online</p>
         </div>
 
         <div class="flex items-center gap-2 w-full sm:w-auto">
@@ -121,20 +124,121 @@ async function renderDealerView() {
       </div>
 
       <!-- Quick Scan Trigger Card -->
-      <div class="glass-card p-6 text-center py-10 border-2 border-dashed border-emerald-500/40 hover:border-emerald-500 transition cursor-pointer" onclick="state.setActiveTab('scan_qr')">
-        <div class="w-16 h-16 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center mx-auto mb-3 shadow-md">
-          <i data-lucide="camera" class="w-8 h-8"></i>
+      <div class="glass-card p-6 text-center py-8 border-2 border-dashed border-emerald-500/40 hover:border-emerald-500 transition cursor-pointer" onclick="state.setActiveTab('scan_qr')">
+        <div class="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center mx-auto mb-2 shadow-md">
+          <i data-lucide="camera" class="w-7 h-7"></i>
         </div>
-        <h3 class="text-lg font-bold text-slate-900 dark:text-white">Scan Farmer Digital Pass</h3>
-        <p class="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">Validate booking status, centre code, and single-use pass validity instantly via camera.</p>
-        <span class="btn-agri text-xs px-5">Open Scanner</span>
+        <h3 class="text-base font-bold text-slate-900 dark:text-white">Scan Assigned Farmer QR Pass</h3>
+        <p class="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-3">Server validates your exclusive dealer authorization for this farmer pass.</p>
+        <span class="btn-agri text-xs px-5">Open QR Scanner</span>
       </div>
+
+      <!-- Dedicated My Assigned Farmers Section -->
+      ${await renderAssignedFarmersSection()}
 
       <!-- Dealer Transactions Table -->
       ${await renderDealerTransactionsPage()}
 
     </div>
   `;
+}
+
+async function renderAssignedFarmersSection() {
+  let farmers = [];
+  try {
+    farmers = await api.getDealerAssignedFarmers();
+  } catch (e) {
+    farmers = [];
+  }
+
+  return `
+    <div class="glass-card p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="users" class="w-5 h-5 text-emerald-600"></i>
+            My Assigned Farmers
+          </h3>
+          <p class="text-xs text-slate-500">Farmers who have explicitly selected your dealership for procurement</p>
+        </div>
+        <span class="text-xs font-bold px-2.5 py-1 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 rounded-full">
+          ${farmers.length} Assigned
+        </span>
+      </div>
+
+      ${farmers.length === 0 ? `
+        <div class="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+          <i data-lucide="user-x" class="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2"></i>
+          <p class="text-xs font-semibold text-slate-600 dark:text-slate-400">No farmers currently assigned to your station.</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">When farmers choose your dealership during booking, their pass will appear here.</p>
+        </div>
+      ` : `
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500">
+                <th class="pb-2.5 font-bold">Farmer Name</th>
+                <th class="pb-2.5 font-bold">Product</th>
+                <th class="pb-2.5 font-bold">Expected Qty</th>
+                <th class="pb-2.5 font-bold">Slot Time</th>
+                <th class="pb-2.5 font-bold">Token / Status</th>
+                <th class="pb-2.5 font-bold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+              ${farmers.map(f => `
+                <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition">
+                  <td class="py-3">
+                    <div class="font-extrabold text-slate-900 dark:text-white">${escapeHtml(f.farmer_name)}</div>
+                    <div class="text-[11px] text-slate-400">📞 ${escapeHtml(f.farmer_phone)} ${f.village ? `• ${escapeHtml(f.village)}` : ''}</div>
+                  </td>
+                  <td class="py-3 font-semibold text-slate-700 dark:text-slate-300">
+                    🌾 ${escapeHtml(f.product_name)}
+                  </td>
+                  <td class="py-3 font-bold text-emerald-600 dark:text-emerald-400">
+                    ${f.expected_quantity_quintals} Quintals
+                  </td>
+                  <td class="py-3 text-slate-600 dark:text-slate-400">
+                    <div>${escapeHtml(f.slot_date || 'Scheduled')}</div>
+                    <div class="text-[10px] text-slate-400">${escapeHtml(f.slot_time || '')}</div>
+                  </td>
+                  <td class="py-3">
+                    <span class="font-mono font-bold text-slate-800 dark:text-slate-200 block">${escapeHtml(f.token_number || f.booking_code)}</span>
+                    <span class="badge-status ${f.status === 'ACTIVE' ? 'badge-approved' : f.status === 'COMPLETED' ? 'badge-completed' : 'badge-pending'} text-[10px] py-0.5 px-2">
+                      ${f.status}
+                    </span>
+                  </td>
+                  <td class="py-3 text-right">
+                    ${f.status === 'ACTIVE' ? `
+                      <button onclick="handleVerifyFarmerDirect('${escapeHtml(f.booking_code)}')" class="btn-agri text-xs py-1.5 px-3">
+                        <i data-lucide="check-square" class="w-3.5 h-3.5"></i> Verify &amp; Procure
+                      </button>
+                    ` : `
+                      <span class="text-[11px] text-slate-400 font-semibold">${f.status}</span>
+                    `}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+async function handleVerifyFarmerDirect(bookingCode) {
+  try {
+    const res = await api.scanQRCode(bookingCode);
+    if (!res.is_valid) {
+      alert(res.message || "QR Code verification failed.");
+      return;
+    }
+    window.activeProcurementBooking = res;
+    state.setActiveTab('process_procurement_form');
+  } catch (err) {
+    alert(err.message || "Verification failed.");
+  }
 }
 
 function renderProcurementEntryForm() {

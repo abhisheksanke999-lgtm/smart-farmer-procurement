@@ -63,22 +63,31 @@ def send_otp_email(to_email: str, recipient_name: str, otp_code: str) -> Dict[st
     
     Raises EmailDeliveryError if dispatch fails.
     """
-    # 1. Resolve environment configuration
+    # 1. Resolve environment configuration (Environment variables / Render priority, falling back to local settings)
     resend_api_key = (
-        getattr(settings, "RESEND_API_KEY", "") or os.environ.get("RESEND_API_KEY", "")
-    ).strip()
+        os.getenv("RESEND_API_KEY", "").strip()
+        or getattr(settings, "RESEND_API_KEY", "").strip()
+    )
     
     from_email = (
-        getattr(settings, "RESEND_FROM_EMAIL", "") or os.environ.get("RESEND_FROM_EMAIL", "") or "Smart Farmer <onboarding@resend.dev>"
-    ).strip()
+        os.getenv("RESEND_FROM_EMAIL", "").strip()
+        or getattr(settings, "RESEND_FROM_EMAIL", "").strip()
+        or "Smart Farmer <noreply@myproject999.online>"
+    )
 
     if not resend_api_key:
-        logger.error("[RESEND CONFIG ERROR] RESEND_API_KEY is not configured in the environment.")
-        raise EmailDeliveryError("Email service configuration error: RESEND_API_KEY is not set.")
+        logger.error("[RESEND CONFIG ERROR] RESEND_API_KEY is not configured in the environment or .env file.")
+        raise EmailDeliveryError(
+            "Email service configuration error: RESEND_API_KEY is not set. "
+            "Please configure RESEND_API_KEY in your local .env file or environment variables."
+        )
 
     if not from_email:
-        logger.error("[RESEND CONFIG ERROR] RESEND_FROM_EMAIL is not configured in the environment.")
-        raise EmailDeliveryError("Email service configuration error: RESEND_FROM_EMAIL is not set.")
+        logger.error("[RESEND CONFIG ERROR] RESEND_FROM_EMAIL is not configured in the environment or .env file.")
+        raise EmailDeliveryError(
+            "Email service configuration error: RESEND_FROM_EMAIL is not set. "
+            "Please configure RESEND_FROM_EMAIL in your local .env file or environment variables."
+        )
 
     subject = "Your Smart Farmer Procurement Verification Code"
     html_body = generate_otp_html(recipient_name, otp_code)

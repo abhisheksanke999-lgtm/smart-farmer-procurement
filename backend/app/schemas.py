@@ -58,10 +58,19 @@ class SlotBookingCreate(BaseModel):
     slot_id: int
     crop_type: str
     expected_quantity_quintals: float
+    dealer_id: Optional[int] = None
+
+# Farmer Dealer Assignment schemas
+class FarmerDealerAssignmentCreate(BaseModel):
+    product_name: str
+    centre_id: int
+    dealer_id: int
+    slot_id: int
+    expected_quantity_quintals: float = 40.0
 
 # QR Scan Request
 class QRScanRequest(BaseModel):
-    booking_code: str
+    booking_code: str # accepts booking_code, token_number, assignment_code, or qr_token
 
 # Procurement Transaction Create
 class ProcurementCreate(BaseModel):

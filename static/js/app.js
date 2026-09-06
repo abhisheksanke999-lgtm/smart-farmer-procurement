@@ -186,11 +186,30 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+let registrationCentres = [];
+let loadingRegistrationCentres = false;
+
+async function loadRegistrationCentres() {
+  if (registrationCentres.length > 0 || loadingRegistrationCentres) return;
+  loadingRegistrationCentres = true;
+  try {
+    registrationCentres = await api.getPublicCentres();
+  } catch (err) {
+    console.error("Failed to load centres for registration:", err);
+  } finally {
+    loadingRegistrationCentres = false;
+    renderApp();
+  }
+}
+
 function toggleAuthMode(mode) {
   authMode = mode;
   otpVerificationState.active = false;
   if (otpVerificationState.timerInterval) clearInterval(otpVerificationState.timerInterval);
   if (otpVerificationState.cooldownInterval) clearInterval(otpVerificationState.cooldownInterval);
+  if (mode === 'register' && selectedRegisterRole === 'DEALER' && registrationCentres.length === 0) {
+    loadRegistrationCentres();
+  }
   renderApp();
   setTimeout(() => {
     const em = document.getElementById("login-email");
@@ -202,6 +221,9 @@ function toggleAuthMode(mode) {
 
 function selectRegisterRole(role) {
   selectedRegisterRole = role;
+  if (role === 'DEALER' && registrationCentres.length === 0) {
+    loadRegistrationCentres();
+  }
   renderApp();
 }
 
@@ -618,11 +640,36 @@ function renderAuthModal() {
           </div>
 
           ${selectedRegisterRole === 'DEALER' ? `
-            <div class="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 space-y-2">
-              <span class="font-extrabold text-amber-900 dark:text-amber-300 block">Dealer Business Information:</span>
-              <input type="text" id="reg-biz-name" placeholder="Business Name (e.g. Sri Venkateswara Traders)" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900">
-              <input type="text" id="reg-license" placeholder="Trade License No (e.g. LIC-2026-901)" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 font-mono">
-              <input type="text" id="reg-gstin" placeholder="GSTIN / ID Number" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 uppercase font-mono">
+            <div class="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 space-y-2.5">
+              <span class="font-extrabold text-amber-900 dark:text-amber-300 block text-xs">🏢 Dealer Business & Centre Details:</span>
+              <div>
+                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">Business Name <span class="text-rose-600">*</span></label>
+                <input type="text" id="reg-biz-name" placeholder="Business Name (e.g. Sri Venkateswara Traders)" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900">
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">Trade License No <span class="text-rose-600">*</span></label>
+                  <input type="text" id="reg-license" placeholder="e.g. LIC-2026-901" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 font-mono">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">GSTIN / ID <span class="text-rose-600">*</span></label>
+                  <input type="text" id="reg-gstin" placeholder="GSTIN Number" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 uppercase font-mono">
+                </div>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">Assigned Procurement Center <span class="text-rose-600 font-bold">* (Mandatory)</span></label>
+                <select id="reg-dealer-centre" required class="w-full px-3 py-2 rounded-lg border dark:bg-slate-900 font-semibold text-emerald-800 dark:text-emerald-300 text-xs">
+                  <option value="">-- Select Mandatory Procurement Center --</option>
+                  ${registrationCentres.map(c => `
+                    <option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.code)}) - ${escapeHtml(c.district || '')}</option>
+                  `).join('')}
+                </select>
+                ${registrationCentres.length === 0 ? `<p class="text-[10px] text-amber-600 mt-1">Loading procurement centers...</p>` : ''}
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">Business / Office Address <span class="text-rose-600 font-bold">*</span></label>
+                <input type="text" id="reg-dealer-address" placeholder="e.g. Shop #4, APMC Market Yard, Bhimavaram" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900">
+              </div>
             </div>
           ` : ''}
 
@@ -702,10 +749,27 @@ async function handleAuthRegisterSubmit(e) {
   };
 
   if (selectedRegisterRole === 'DEALER') {
-    data.business_name = document.getElementById("reg-biz-name")?.value?.trim();
-    data.license_number = document.getElementById("reg-license")?.value?.trim();
-    data.government_id_number = document.getElementById("reg-gstin")?.value?.trim();
+    const bizName = document.getElementById("reg-biz-name")?.value?.trim();
+    const license = document.getElementById("reg-license")?.value?.trim();
+    const gstin = document.getElementById("reg-gstin")?.value?.trim();
+    const centreId = document.getElementById("reg-dealer-centre")?.value;
+    const address = document.getElementById("reg-dealer-address")?.value?.trim();
+
+    if (!centreId) {
+      alert("Please select a mandatory Procurement Center for Dealer registration.");
+      return;
+    }
+    if (!address || address.length < 2) {
+      alert("Please enter the dealer's business/office address.");
+      return;
+    }
+
+    data.business_name = bizName;
+    data.license_number = license;
+    data.government_id_number = gstin;
     data.government_id_type = "GSTIN";
+    data.assigned_centre_id = parseInt(centreId, 10);
+    data.address = address;
   }
 
   const submitBtn = document.getElementById("btn-submit-reg");

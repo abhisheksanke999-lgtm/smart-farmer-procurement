@@ -15,6 +15,8 @@ async function renderAdminView() {
     return await renderAdminPaymentsPage();
   } else if (activeTab === 'complaints') {
     return await renderAdminComplaintsPage();
+  } else if (activeTab === 'assignments') {
+    return await renderAdminAssignmentsPage();
   }
 
   // Default Admin Executive Dashboard
@@ -77,31 +79,42 @@ async function renderAdminView() {
       </div>
 
       <!-- Action Shortcut Banner -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <button onclick="state.setActiveTab('approvals')" class="glass-card p-5 text-left hover:scale-[1.01] transition border-l-4 border-amber-500 flex items-center justify-between">
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <button onclick="state.setActiveTab('approvals')" class="glass-card p-4 text-left hover:scale-[1.01] transition border-l-4 border-amber-500 flex items-center justify-between">
           <div>
-            <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">Review Dealer Registrations</h4>
-            <p class="text-xs text-slate-500">Verify GSTIN & Licenses before approving</p>
+            <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">Review Dealers</h4>
+            <p class="text-[11px] text-slate-500">Approvals & Licenses</p>
           </div>
-          <i data-lucide="user-check" class="w-6 h-6 text-amber-500"></i>
+          <i data-lucide="user-check" class="w-5 h-5 text-amber-500"></i>
         </button>
 
-        <button onclick="state.setActiveTab('centres')" class="glass-card p-5 text-left hover:scale-[1.01] transition border-l-4 border-emerald-500 flex items-center justify-between">
+        <button onclick="state.setActiveTab('assignments')" class="glass-card p-4 text-left hover:scale-[1.01] transition border-l-4 border-emerald-500 flex items-center justify-between">
           <div>
-            <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">Manage Procurement Centres</h4>
-            <p class="text-xs text-slate-500">Configure daily slot capacity & hours</p>
+            <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">Farmer Assignments</h4>
+            <p class="text-[11px] text-slate-500">Farmer ➔ Centre ➔ Dealer</p>
           </div>
-          <i data-lucide="warehouse" class="w-6 h-6 text-emerald-500"></i>
+          <i data-lucide="git-merge" class="w-5 h-5 text-emerald-500"></i>
         </button>
 
-        <button onclick="state.setActiveTab('admin_payments')" class="glass-card p-5 text-left hover:scale-[1.01] transition border-l-4 border-purple-500 flex items-center justify-between">
+        <button onclick="state.setActiveTab('centres')" class="glass-card p-4 text-left hover:scale-[1.01] transition border-l-4 border-blue-500 flex items-center justify-between">
           <div>
-            <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">Process DBT Direct Payouts</h4>
-            <p class="text-xs text-slate-500">1-Click government bank disbursement</p>
+            <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">Centres</h4>
+            <p class="text-[11px] text-slate-500">Capacities & Crops</p>
           </div>
-          <i data-lucide="banknote" class="w-6 h-6 text-purple-500"></i>
+          <i data-lucide="warehouse" class="w-5 h-5 text-blue-500"></i>
+        </button>
+
+        <button onclick="state.setActiveTab('admin_payments')" class="glass-card p-4 text-left hover:scale-[1.01] transition border-l-4 border-purple-500 flex items-center justify-between">
+          <div>
+            <h4 class="font-extrabold text-sm text-slate-900 dark:text-white">DBT Direct Payouts</h4>
+            <p class="text-[11px] text-slate-500">Bank disbursements</p>
+          </div>
+          <i data-lucide="banknote" class="w-5 h-5 text-purple-500"></i>
         </button>
       </div>
+
+      <!-- Farmer-Dealer Assignments Section -->
+      ${await renderAdminAssignmentsSection()}
 
       <!-- System Audit Trail -->
       ${await renderAdminAuditLogSection()}
@@ -175,12 +188,16 @@ async function renderAdminDealerApprovals() {
               </div>
               <div>
                 <span class="text-slate-400 block font-medium">Assigned Centre</span>
-                <span class="font-bold text-slate-800 dark:text-slate-200">${d.assigned_centre_name}</span>
+                <span class="font-bold text-emerald-700 dark:text-emerald-300">${escapeHtml(d.assigned_centre_name || 'Unassigned')} ${d.assigned_centre_id ? `(ID: ${d.assigned_centre_id})` : ''}</span>
               </div>
               <div>
-                <span class="text-slate-400 block font-medium">Documents</span>
-                <span class="font-bold text-blue-600 cursor-pointer underline">View PDF Documents</span>
+                <span class="text-slate-400 block font-medium">Business Address</span>
+                <span class="font-bold text-slate-800 dark:text-slate-200">${escapeHtml(d.address || 'APMC Yard')}</span>
               </div>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+              <span>Applied / Registered: ${d.created_at}</span>
+              <span class="font-mono">Dealer ID: ${d.dealer_id}</span>
             </div>
 
             ${d.rejection_reason ? `
@@ -406,6 +423,186 @@ async function renderAdminComplaintsPage() {
       <i data-lucide="message-square text-slate-300 w-12 h-12 mx-auto mb-2"></i>
       <h3 class="font-bold text-slate-800 dark:text-white">Farmer & Dealer Grievance Portal</h3>
       <p class="text-xs text-slate-500">0 Active Grievances / Complaints reported.</p>
+    </div>
+  `;
+}
+
+async function renderAdminAssignmentsSection() {
+  let assignments = [];
+  try {
+    assignments = await api.getAdminAssignments();
+  } catch (e) {
+    assignments = [];
+  }
+
+  const activeCount = assignments.filter(a => a.status === 'ACTIVE').length;
+
+  return `
+    <div class="glass-card p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="git-merge" class="w-5 h-5 text-emerald-600"></i>
+            Farmer–Dealer Assignments Hierarchy
+          </h3>
+          <p class="text-xs text-slate-500">Relationship Tracking: Farmer ➔ Produce ➔ Procurement Centre ➔ Exclusive Dealer</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold px-2.5 py-1 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 rounded-full">
+            ${activeCount} Active
+          </span>
+          <button onclick="state.setActiveTab('assignments')" class="btn-agri text-xs py-1 px-3">
+            View All (${assignments.length})
+          </button>
+        </div>
+      </div>
+
+      ${assignments.length === 0 ? `
+        <div class="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-500">
+          No farmer-dealer procurement assignments recorded yet.
+        </div>
+      ` : `
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold">
+                <th class="pb-2.5">Farmer</th>
+                <th class="pb-2.5">Product</th>
+                <th class="pb-2.5">Procurement Centre</th>
+                <th class="pb-2.5">Exclusive Assigned Dealer</th>
+                <th class="pb-2.5">Token / Status</th>
+                <th class="pb-2.5 text-right">Created</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+              ${assignments.slice(0, 5).map(a => `
+                <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition">
+                  <td class="py-2.5 font-bold text-slate-900 dark:text-white">
+                    ${escapeHtml(a.farmer_name)}
+                    <span class="block text-[10px] text-slate-400 font-normal">📞 ${escapeHtml(a.farmer_phone)}</span>
+                  </td>
+                  <td class="py-2.5 font-semibold text-slate-700 dark:text-slate-300">
+                    🌾 ${escapeHtml(a.product_name)}
+                  </td>
+                  <td class="py-2.5 text-slate-700 dark:text-slate-300">
+                    ${escapeHtml(a.centre_name)}
+                  </td>
+                  <td class="py-2.5">
+                    <span class="font-bold text-emerald-700 dark:text-emerald-400 block">${escapeHtml(a.dealer_name)}</span>
+                    <span class="text-[10px] text-slate-400">${escapeHtml(a.dealer_business || '')}</span>
+                  </td>
+                  <td class="py-2.5">
+                    <span class="font-mono font-bold text-slate-800 dark:text-slate-200 block">${escapeHtml(a.token_number || a.assignment_code)}</span>
+                    <span class="badge-status ${a.status === 'ACTIVE' ? 'badge-approved' : a.status === 'COMPLETED' ? 'badge-completed' : 'badge-rejected'} text-[10px] py-0.5 px-2">
+                      ${a.status}
+                    </span>
+                  </td>
+                  <td class="py-2.5 text-right text-slate-400 text-[11px]">
+                    ${a.created_at}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+async function renderAdminAssignmentsPage() {
+  let assignments = [];
+  try {
+    assignments = await api.getAdminAssignments();
+  } catch (e) {
+    assignments = [];
+  }
+
+  const activeCount = assignments.filter(a => a.status === 'ACTIVE').length;
+  const completedCount = assignments.filter(a => a.status === 'COMPLETED').length;
+  const cancelledCount = assignments.filter(a => a.status === 'CANCELLED').length;
+
+  return `
+    <div class="space-y-6">
+      <div class="glass-card p-5 border-l-4 border-emerald-600 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="git-merge" class="w-6 h-6 text-emerald-600"></i>
+            Farmer–Dealer–Centre Assignments
+          </h2>
+          <p class="text-xs text-slate-500">
+            Relationship Hierarchy: Farmer ➔ Produce ➔ Procurement Centre ➔ Exclusive Assigned Dealer
+          </p>
+        </div>
+        <div class="flex items-center gap-2 text-xs font-bold">
+          <span class="px-2.5 py-1 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 rounded-full">
+            ${activeCount} Active
+          </span>
+          <span class="px-2.5 py-1 bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 rounded-full">
+            ${completedCount} Completed
+          </span>
+          <span class="px-2.5 py-1 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-full">
+            ${cancelledCount} Cancelled
+          </span>
+        </div>
+      </div>
+
+      <div class="glass-card p-5 space-y-4">
+        ${assignments.length === 0 ? `
+          <div class="p-8 text-center text-slate-400">
+            No farmer-dealer assignments recorded in the system yet.
+          </div>
+        ` : `
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold">
+                  <th class="pb-3">Farmer</th>
+                  <th class="pb-3">Produce</th>
+                  <th class="pb-3">Procurement Centre</th>
+                  <th class="pb-3">Exclusive Assigned Dealer</th>
+                  <th class="pb-3">Token / Code</th>
+                  <th class="pb-3">Status</th>
+                  <th class="pb-3 text-right">Date & Time</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                ${assignments.map(a => `
+                  <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition">
+                    <td class="py-3">
+                      <div class="font-extrabold text-slate-900 dark:text-white">${escapeHtml(a.farmer_name)}</div>
+                      <div class="text-[11px] text-slate-400 font-mono">📞 ${escapeHtml(a.farmer_phone)}</div>
+                    </td>
+                    <td class="py-3 font-semibold text-slate-700 dark:text-slate-300">
+                      🌾 ${escapeHtml(a.product_name)}
+                    </td>
+                    <td class="py-3">
+                      <div class="font-bold text-slate-800 dark:text-slate-200">${escapeHtml(a.centre_name)}</div>
+                      <div class="text-[10px] text-slate-400">${escapeHtml(a.centre_location || '')}</div>
+                    </td>
+                    <td class="py-3">
+                      <div class="font-bold text-emerald-700 dark:text-emerald-400">${escapeHtml(a.dealer_name)}</div>
+                      <div class="text-[10px] text-slate-400">${escapeHtml(a.dealer_business || 'Dealer')}</div>
+                    </td>
+                    <td class="py-3 font-mono font-bold text-slate-800 dark:text-slate-200">
+                      <div>${escapeHtml(a.token_number || a.assignment_code)}</div>
+                      <div class="text-[10px] text-slate-400">${escapeHtml(a.booking_code || '')}</div>
+                    </td>
+                    <td class="py-3">
+                      <span class="badge-status ${a.status === 'ACTIVE' ? 'badge-approved' : a.status === 'COMPLETED' ? 'badge-completed' : 'badge-rejected'} text-[10px] py-0.5 px-2">
+                        ${a.status}
+                      </span>
+                    </td>
+                    <td class="py-3 text-right text-slate-500 text-[11px]">
+                      ${a.created_at}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
     </div>
   `;
 }

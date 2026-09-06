@@ -11,7 +11,7 @@ function renderQRModal() {
     if (canvas && window.QRCode) {
       canvas.innerHTML = "";
       new QRCode(canvas, {
-        text: booking.booking_code,
+        text: booking.qr_token || booking.booking_code,
         width: 180,
         height: 180,
         colorDark: "#065f46",
@@ -37,27 +37,35 @@ function renderQRModal() {
           <h3 class="text-xl font-black text-slate-900 dark:text-white leading-tight">
             ${booking.token_number}
           </h3>
-          <p class="text-xs text-slate-500 font-mono mt-0.5">${booking.booking_code}</p>
+          <p class="text-xs text-slate-500 font-mono mt-0.5">${booking.raw_booking_code || booking.booking_code}</p>
         </div>
 
         <!-- Scannable QR Canvas Box -->
-        <div class="p-4 bg-white rounded-2xl shadow-inner border border-slate-200 inline-block mb-4">
+        <div class="p-4 bg-white rounded-2xl shadow-inner border border-slate-200 inline-block mb-3">
           <div id="qr-canvas" class="flex justify-center items-center"></div>
         </div>
 
+        <!-- Authorized Dealer Pill -->
+        ${booking.dealer_name ? `
+          <div class="mb-3 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 rounded-xl border border-emerald-300 dark:border-emerald-800 text-[11px] text-emerald-900 dark:text-emerald-200 font-bold flex items-center justify-center gap-1.5">
+            <i data-lucide="lock" class="w-3.5 h-3.5 text-emerald-600"></i>
+            Authorized Dealer: <span class="underline">${escapeHtml(booking.dealer_name)}</span>
+          </div>
+        ` : ''}
+
         <!-- Booking Details Card -->
-        <div class="bg-slate-50 dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 text-left text-xs space-y-2 mb-5">
+        <div class="bg-slate-50 dark:bg-slate-800/80 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 text-left text-xs space-y-2 mb-4">
           <div class="flex justify-between">
             <span class="text-slate-500 font-medium">Procurement Centre:</span>
-            <span class="font-bold text-slate-900 dark:text-slate-100">${booking.centre_name}</span>
+            <span class="font-bold text-slate-900 dark:text-slate-100">${escapeHtml(booking.centre_name || '')}</span>
           </div>
           <div class="flex justify-between">
             <span class="text-slate-500 font-medium">Crop & Expected Qty:</span>
-            <span class="font-bold text-emerald-700 dark:text-emerald-400">${booking.crop_type} (${booking.expected_quantity_quintals} Q)</span>
+            <span class="font-bold text-emerald-700 dark:text-emerald-400">${escapeHtml(booking.crop_type || '')} (${booking.expected_quantity_quintals} Q)</span>
           </div>
           <div class="flex justify-between">
             <span class="text-slate-500 font-medium">Slot Time:</span>
-            <span class="font-bold text-slate-900 dark:text-slate-100">${booking.slot_date} | ${booking.slot_time}</span>
+            <span class="font-bold text-slate-900 dark:text-slate-100">${escapeHtml(booking.slot_date || '')} | ${escapeHtml(booking.slot_time || '')}</span>
           </div>
         </div>
 

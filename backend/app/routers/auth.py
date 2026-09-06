@@ -7,7 +7,10 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import User, UserRole, FarmerProfile, DealerProfile, DealerStatus, Notification, NotificationType, AuditLog, PendingFarmerRegistration
+from ..models import (
+    User, UserRole, FarmerProfile, DealerProfile, DealerStatus,
+    ProcurementCentre, Notification, NotificationType, AuditLog, PendingFarmerRegistration
+)
 from ..schemas import UserLogin, UserRegister, TokenResponse, EmailVerificationRequest, OTPVerifyRequest, OTPResendRequest
 from email_validator import validate_email, EmailNotValidError
 from ..auth import get_password_hash, verify_password, create_access_token, require_user
@@ -15,6 +18,22 @@ from ..email_service import send_otp_email, EmailDeliveryError
 from ..config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+@router.get("/centres")
+def get_public_centres(db: Session = Depends(get_db)):
+    """Returns active procurement centres for registration dropdowns."""
+    centres = db.query(ProcurementCentre).filter(ProcurementCentre.is_active == True).all()
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "code": c.code,
+            "location": c.location,
+            "district": c.district,
+            "supported_crops": [crop.strip() for crop in (c.supported_crops or "").split(",") if crop.strip()]
+        }
+        for c in centres
+    ]
 
 def validate_and_normalize_email(email_str: str) -> str:
     """Validates email format and normalizes it. Rejects empty, malformed, or invalid emails."""
@@ -67,9 +86,11 @@ def build_user_dict(user: User) -> dict:
         }
     elif user.role == UserRole.DEALER and user.dealer_profile:
         dp = user.dealer_profile
+        centre_name = dp.centre.name if dp.centre else ""
         user_dict["dealer_status"] = dp.status
         user_dict["business_name"] = dp.business_name
         user_dict["assigned_centre_id"] = dp.assigned_centre_id
+        user_dict["assigned_centre_name"] = centre_name
         user_dict["dealer_profile"] = {
             "business_name": dp.business_name,
             "license_number": dp.license_number,
@@ -77,6 +98,7 @@ def build_user_dict(user: User) -> dict:
             "government_id_number": dp.government_id_number,
             "status": dp.status,
             "assigned_centre_id": dp.assigned_centre_id,
+            "assigned_centre_name": centre_name,
             "rejection_reason": dp.rejection_reason
         }
     return user_dict
@@ -152,14 +174,33 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
             "land_size_acres": float(register_data.land_size_acres) if register_data.land_size_acres is not None else 2.5
         }
     else:  # DEALER
+        if not register_data.assigned_centre_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Procurement Center selection is mandatory for Dealer registration."
+            )
+        centre = db.query(ProcurementCentre).filter(
+            ProcurementCentre.id == register_data.assigned_centre_id,
+            ProcurementCentre.is_active == True
+        ).first()
+        if not centre:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected Procurement Center does not exist or is inactive."
+            )
+        if not register_data.address or len(register_data.address.strip()) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Address is required for Dealer registration."
+            )
         extra_info = {
             "role": UserRole.DEALER,
             "business_name": register_data.business_name or f"{register_data.name} Enterprise",
-            "address": register_data.address or "Procurement Market Road",
+            "address": register_data.address.strip(),
             "government_id_type": register_data.government_id_type or "GSTIN",
             "government_id_number": register_data.government_id_number or "36AAACG1234H1Z1",
             "license_number": register_data.license_number or f"LIC-{secrets.token_hex(4).upper()}",
-            "assigned_centre_id": register_data.assigned_centre_id or 1
+            "assigned_centre_id": centre.id
         }
 
     pending = db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == email).first()
@@ -304,7 +345,7 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
             government_id_number=extra_data.get("government_id_number", "36AAACG1234H1Z1"),
             license_number=extra_data.get("license_number", f"LIC-{secrets.token_hex(4).upper()}"),
             status=DealerStatus.PENDING,
-            assigned_centre_id=extra_data.get("assigned_centre_id", 1)
+            assigned_centre_id=extra_data.get("assigned_centre_id")
         )
         db.add(dp)
 

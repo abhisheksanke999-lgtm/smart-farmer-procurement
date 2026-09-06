@@ -1,7 +1,10 @@
-let cachedCentres = [];
-let cachedSlots = [];
+let selectedCrop = "Rice";
 let selectedCentreId = null;
+let selectedDealerId = null;
 let selectedSlotId = null;
+let cachedCentres = [];
+let cachedDealers = [];
+let cachedSlots = [];
 let liveQueueData = null;
 
 async function renderFarmerView() {
@@ -145,15 +148,73 @@ async function handleTriggerEmailVerify() {
 
 async function renderFarmerActiveBookingCard() {
   try {
+    const activeAssignment = await api.getFarmerActiveAssignment();
+    if (activeAssignment && activeAssignment.has_active_assignment) {
+      const active = activeAssignment;
+      return `
+        <div class="glass-card p-5 border-2 border-emerald-500/80 relative overflow-hidden shadow-lg">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div class="flex items-center gap-2">
+              <span class="badge-status badge-approved flex items-center gap-1 font-bold text-xs py-1 px-2.5">
+                <i data-lucide="shield-check" class="w-4 h-4"></i> ACTIVE ASSIGNMENT
+              </span>
+              <span class="text-xs bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-extrabold px-3 py-1 rounded-full border border-emerald-300 dark:border-emerald-800">
+                🌾 ${escapeHtml(active.product_name)}
+              </span>
+            </div>
+            <span class="text-xs font-mono font-bold text-slate-400">Assigned: ${active.created_at}</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800/80 p-4 rounded-xl border border-slate-200 dark:border-slate-700 mb-4">
+            <div>
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Authorized Procurement Dealer</span>
+              <h4 class="text-lg font-black text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
+                <i data-lucide="building-2" class="w-4 h-4 text-emerald-600"></i> ${escapeHtml(active.dealer_name)}
+              </h4>
+              <p class="text-xs text-slate-600 dark:text-slate-300 font-medium">${escapeHtml(active.dealer_business || 'Authorized Dealer')}</p>
+              <p class="text-xs text-slate-500 mt-1">📞 ${escapeHtml(active.dealer_phone || 'N/A')}</p>
+            </div>
+
+            <div>
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Procurement Centre & Schedule</span>
+              <h4 class="text-lg font-black text-slate-900 dark:text-white flex items-center gap-1.5 mt-0.5">
+                <i data-lucide="map-pin" class="w-4 h-4 text-emerald-600"></i> ${escapeHtml(active.centre_name)}
+              </h4>
+              <p class="text-xs text-slate-600 dark:text-slate-300 font-medium">${escapeHtml(active.slot_date || '')} (${escapeHtml(active.slot_time || '')})</p>
+              <p class="text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400 mt-1">
+                Token: ${escapeHtml(active.token_number || '')} • Qty: ${active.expected_quantity_quintals} Quintals
+              </p>
+            </div>
+          </div>
+
+          <div class="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 flex items-start sm:items-center gap-2.5 mb-4">
+            <i data-lucide="lock" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5 sm:mt-0"></i>
+            <div>
+              <strong class="font-bold">Strict QR Authorization Active:</strong> Only Dealer <strong>${escapeHtml(active.dealer_name)}</strong> at <strong>${escapeHtml(active.centre_name)}</strong> is authorized to scan and process your produce. All other dealers will be rejected by the server.
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <button onclick="showAssignmentQRPass(${JSON.stringify(active).replace(/"/g, '&quot;')})" class="btn-agri text-xs py-3 px-5 shadow-lg flex items-center gap-2">
+              <i data-lucide="qr-code" class="w-4 h-4"></i> Show Scannable QR Pass
+            </button>
+            <button onclick="handleCancelAssignment(${active.assignment_id})" class="px-4 py-3 bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-950 dark:hover:bg-red-900 dark:text-red-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+              <i data-lucide="x-circle" class="w-4 h-4"></i> Cancel Assignment
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
     const bookings = await api.getFarmerBookings();
     if (bookings.length === 0) {
       return `
         <div class="glass-card p-6 text-center py-8">
           <i data-lucide="calendar-x2" class="w-12 h-12 text-slate-400 mx-auto mb-2 opacity-50"></i>
           <h4 class="font-bold text-sm text-slate-800 dark:text-slate-200">No Active Slot Booking</h4>
-          <p class="text-xs text-slate-500 mb-4">Book your procurement slot ahead of time to avoid queue congestion.</p>
+          <p class="text-xs text-slate-500 mb-4">Select a crop, procurement center, and assigned dealer to generate your QR pass.</p>
           <button onclick="state.setActiveTab('book_slot')" class="btn-agri text-xs">
-            <i data-lucide="plus" class="w-4 h-4"></i> Book Slot Now
+            <i data-lucide="plus" class="w-4 h-4"></i> Book Procurement Slot Now
           </button>
         </div>
       `;
@@ -179,6 +240,11 @@ async function renderFarmerActiveBookingCard() {
             <p class="text-xs text-slate-500 mt-0.5">
               ${active.centre_name} | ${active.slot_date} (${active.slot_time})
             </p>
+            ${active.dealer_name ? `
+              <p class="text-xs font-bold text-emerald-700 dark:text-emerald-400 mt-1">
+                Assigned Dealer: ${active.dealer_name}
+              </p>
+            ` : ''}
           </div>
 
           <button onclick="state.setBookingForQR(${JSON.stringify(active).replace(/"/g, '&quot;')})" class="btn-agri text-xs py-3 px-5 w-full sm:w-auto flex-shrink-0 shadow-lg">
@@ -193,9 +259,15 @@ async function renderFarmerActiveBookingCard() {
 }
 
 async function renderSlotBookingWizard() {
+  if (!selectedCrop) selectedCrop = "Rice";
   try {
-    cachedCentres = await api.getCentres();
-  } catch (e) {}
+    cachedCentres = await api.getCentres(selectedCrop);
+  } catch (e) {
+    cachedCentres = [];
+  }
+
+  const selectedCentre = cachedCentres.find(c => c.id === Number(selectedCentreId));
+  const selectedDealer = cachedDealers.find(d => d.dealer_id === Number(selectedDealerId));
 
   return `
     <div class="max-w-2xl mx-auto space-y-6">
@@ -203,60 +275,146 @@ async function renderSlotBookingWizard() {
       <div class="glass-card p-5 border-l-4 border-emerald-600">
         <h2 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <i data-lucide="calendar-check" class="w-6 h-6 text-emerald-600"></i>
-          ${i18n.t('book_slot_title')}
+          Procurement Booking & Dealer Assignment
         </h2>
-        <p class="text-xs text-slate-500">Guaranteed non-overbooking slot system with instant digital token generation.</p>
+        <p class="text-xs text-slate-500 mt-1">
+          Strict 4-Step Assignment: Crop Selection ➔ Verified Centre ➔ Authorized Dealer ➔ QR Pass
+        </p>
       </div>
 
-      <form id="slot-booking-form" onsubmit="handleConfirmSlotBooking(event)" class="glass-card p-6 space-y-5">
+      <form id="slot-booking-form" onsubmit="handleConfirmFarmerAssignment(event)" class="glass-card p-6 space-y-6">
         
-        <!-- 1. Select Procurement Centre -->
+        <!-- STEP 1: Crop / Product Selection -->
         <div>
-          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-            1. ${i18n.t('select_centre')} *
+          <label class="block text-xs font-extrabold text-slate-800 dark:text-slate-200 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] inline-flex items-center justify-center font-bold">1</span>
+            Select Product / Crop *
           </label>
-          <select id="booking-centre-select" onchange="handleCentreSelectionChange(this.value)" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-            <option value="">-- Choose Procurement Centre --</option>
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            ${['Rice', 'Paddy', 'Cotton', 'Maize', 'Chilli'].map(crop => `
+              <button type="button" onclick="handleCropSelection('${crop}')" class="py-2.5 px-3 rounded-xl border-2 text-xs font-bold transition flex items-center justify-center gap-1.5 ${selectedCrop === crop ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-emerald-300'}">
+                ${crop === 'Rice' ? '🌾 Rice' : crop === 'Paddy' ? '🌾 Paddy' : crop === 'Cotton' ? '☁️ Cotton' : crop === 'Maize' ? '🌽 Maize' : '🌶️ Chilli'}
+              </button>
+            `).join('')}
+          </div>
+          <p class="text-[11px] text-slate-500 mt-1.5">Procurement centers will be filtered automatically based on selected produce.</p>
+        </div>
+
+        <!-- STEP 2: Filtered Procurement Centre Selection -->
+        <div class="border-t border-slate-200 dark:border-slate-700 pt-5">
+          <label class="block text-xs font-extrabold text-slate-800 dark:text-slate-200 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] inline-flex items-center justify-center font-bold">2</span>
+            Select Supported Procurement Centre *
+          </label>
+          <select id="booking-centre-select" onchange="handleCentreSelection(this.value)" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none font-semibold">
+            <option value="">-- Choose Centre Supporting ${selectedCrop} --</option>
             ${cachedCentres.map(c => `
-              <option value="${c.id}">${c.name} (${c.location}) - Capacity: ${c.daily_capacity}/day</option>
+              <option value="${c.id}" ${Number(selectedCentreId) === c.id ? 'selected' : ''}>
+                ${escapeHtml(c.name)} (${escapeHtml(c.code)}) - ${escapeHtml(c.district || c.location)} [Capacity: ${c.daily_capacity}/day]
+              </option>
             `).join('')}
           </select>
+          ${cachedCentres.length === 0 ? `
+            <p class="text-xs text-rose-600 mt-1 font-semibold">No procurement centers currently accept ${selectedCrop}. Please choose another crop.</p>
+          ` : `
+            <p class="text-[11px] text-slate-500 mt-1">Showing ${cachedCentres.length} center(s) equipped for ${selectedCrop} handling.</p>
+          `}
         </div>
 
-        <!-- 2. Select Slot -->
-        <div id="slots-container" class="hidden space-y-2">
-          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300">
-            2. ${i18n.t('select_slot')} *
+        <!-- STEP 3: Dealer Selection (Filtered by Centre) -->
+        <div id="dealers-section" class="${selectedCentreId ? '' : 'hidden'} border-t border-slate-200 dark:border-slate-700 pt-5 space-y-3">
+          <label class="block text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] inline-flex items-center justify-center font-bold">3</span>
+            Select Authorized Dealer at ${selectedCentre ? escapeHtml(selectedCentre.name) : 'Selected Centre'} *
           </label>
-          <div id="slots-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+          
+          ${cachedDealers.length === 0 ? `
+            <div class="p-4 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300">
+              ⚠️ No approved dealers are currently registered at this procurement center. Please select a different center or check back later.
+            </div>
+          ` : `
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="dealers-grid">
+              ${cachedDealers.map(d => `
+                <label class="cursor-pointer p-3.5 rounded-xl border-2 transition ${Number(selectedDealerId) === d.dealer_id ? 'border-emerald-600 bg-emerald-50/70 dark:bg-emerald-950/50 shadow-md ring-2 ring-emerald-500/20' : 'border-slate-200 dark:border-slate-700 hover:border-emerald-400 bg-white dark:bg-slate-800'} flex flex-col justify-between">
+                  <div class="flex items-start gap-2.5">
+                    <input type="radio" name="dealer_id_radio" value="${d.dealer_id}" ${Number(selectedDealerId) === d.dealer_id ? 'checked' : ''} onchange="handleDealerSelection(${d.dealer_id})" class="mt-1 text-emerald-600 focus:ring-emerald-500">
+                    <div>
+                      <span class="font-extrabold text-sm text-slate-900 dark:text-white block">${escapeHtml(d.name)}</span>
+                      <span class="text-xs text-slate-600 dark:text-slate-300 font-medium block">${escapeHtml(d.business_name)}</span>
+                      <span class="text-[11px] text-slate-400 font-mono mt-0.5 block">Lic: ${escapeHtml(d.license_number)}</span>
+                      <span class="text-[11px] text-slate-500 block">📞 ${escapeHtml(d.mobile_number)}</span>
+                    </div>
+                  </div>
+                  <div class="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between">
+                    <span class="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 uppercase">Verified Dealer ✓</span>
+                    <span class="text-[10px] text-slate-400">${escapeHtml(d.centre_name)}</span>
+                  </div>
+                </label>
+              `).join('')}
+            </div>
+          `}
         </div>
 
-        <!-- 3. Crop & Quantity Details -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              3. ${i18n.t('select_crop')} *
-            </label>
-            <select id="booking-crop-select" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-              <option value="Paddy (ధాన్యం)">Paddy (ధాన్యం - Fine / Grade A)</option>
-              <option value="Cotton (పత్తి)">Cotton (పత్తి)</option>
-              <option value="Maize (మొక్కజొన్న)">Maize (మొక్కజొన్న)</option>
-              <option value="Chilli (మిరప)">Red Chilli (మిరప)</option>
-            </select>
+        <!-- STEP 4: Slot & Quantity Selection -->
+        <div id="slots-section" class="${selectedDealerId ? '' : 'hidden'} border-t border-slate-200 dark:border-slate-700 pt-5 space-y-4">
+          <label class="block text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] inline-flex items-center justify-center font-bold">4</span>
+            Select Slot & Expected Quantity *
+          </label>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="slots-grid">
+            ${cachedSlots.map(s => {
+              const isFull = s.is_full;
+              const isSelected = Number(selectedSlotId) === s.id;
+              return `
+                <label class="cursor-pointer p-3 rounded-xl border-2 transition ${isFull ? 'opacity-50 border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 pointer-events-none' : isSelected ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950' : 'border-slate-200 dark:border-slate-700 hover:border-emerald-500 bg-white dark:bg-slate-800'} flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <input type="radio" name="slot_id_radio" value="${s.id}" ${isSelected ? 'checked' : ''} ${isFull ? 'disabled' : ''} onchange="handleSlotSelection(${s.id})" class="text-emerald-600 focus:ring-emerald-500">
+                    <div>
+                      <span class="font-bold text-xs text-slate-900 dark:text-white block">${s.date}</span>
+                      <span class="text-[11px] text-slate-500">${s.start_time} - ${s.end_time}</span>
+                    </div>
+                  </div>
+                  <span class="text-[10px] font-extrabold px-2 py-0.5 rounded ${isFull ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'}">
+                    ${isFull ? 'Full' : `${s.available_capacity} Left`}
+                  </span>
+                </label>
+              `;
+            }).join('')}
           </div>
 
           <div>
             <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              4. ${i18n.t('enter_quantity')} *
+              Expected Produce Quantity (Quintals) *
             </label>
             <input type="number" id="booking-quantity-input" min="1" max="500" step="0.5" value="40" required class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
-        </div>
 
-        <!-- Submit Button -->
-        <button type="submit" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
-          <i data-lucide="check" class="w-5 h-5"></i> ${i18n.t('confirm_booking')}
-        </button>
+          <!-- Assignment Summary Box -->
+          ${selectedDealer && selectedCentre ? `
+            <div class="p-4 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs space-y-1.5">
+              <span class="font-extrabold text-emerald-900 dark:text-emerald-200 block text-xs">Assignment Summary:</span>
+              <div class="text-slate-700 dark:text-slate-300 flex justify-between">
+                <span>Product:</span> <strong class="text-slate-900 dark:text-white">${selectedCrop}</strong>
+              </div>
+              <div class="text-slate-700 dark:text-slate-300 flex justify-between">
+                <span>Procurement Centre:</span> <strong class="text-slate-900 dark:text-white">${escapeHtml(selectedCentre.name)}</strong>
+              </div>
+              <div class="text-slate-700 dark:text-slate-300 flex justify-between">
+                <span>Exclusive Assigned Dealer:</span> <strong class="text-emerald-700 dark:text-emerald-400">${escapeHtml(selectedDealer.name)} (${escapeHtml(selectedDealer.business_name)})</strong>
+              </div>
+              <div class="pt-2 border-t border-emerald-200 dark:border-emerald-800/80 text-[11px] text-amber-800 dark:text-amber-300 font-semibold flex items-center gap-1.5">
+                <i data-lucide="shield-alert" class="w-3.5 h-3.5 flex-shrink-0"></i>
+                Only Dealer ${escapeHtml(selectedDealer.name)} will be authorized to scan and process your pass.
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Submit Button -->
+          <button type="submit" id="btn-confirm-assignment" class="btn-agri w-full py-3.5 text-sm font-bold shadow-xl flex items-center justify-center gap-2">
+            <i data-lucide="check-circle" class="w-5 h-5"></i> Confirm Assignment & Generate QR Pass
+          </button>
+        </div>
 
       </form>
 
@@ -264,61 +422,132 @@ async function renderSlotBookingWizard() {
   `;
 }
 
-async function handleCentreSelectionChange(centreId) {
+async function handleCropSelection(crop) {
+  selectedCrop = crop;
+  selectedCentreId = null;
+  selectedDealerId = null;
+  selectedSlotId = null;
+  cachedDealers = [];
+  cachedSlots = [];
+  try {
+    cachedCentres = await api.getCentres(crop);
+  } catch (e) {
+    cachedCentres = [];
+  }
+  renderApp();
+}
+
+async function handleCentreSelection(centreId) {
   selectedCentreId = centreId;
-  const container = document.getElementById("slots-container");
-  const grid = document.getElementById("slots-grid");
+  selectedDealerId = null;
+  selectedSlotId = null;
+  cachedDealers = [];
+  cachedSlots = [];
   if (!centreId) {
-    container.classList.add("hidden");
+    renderApp();
     return;
   }
-
   try {
-    cachedSlots = await api.getSlots(centreId);
-    grid.innerHTML = cachedSlots.map(s => {
-      const isFull = s.is_full;
-      return `
-        <label class="cursor-pointer p-3 rounded-xl border-2 transition ${isFull ? 'opacity-50 border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 pointer-events-none' : 'border-slate-200 dark:border-slate-700 hover:border-emerald-500 bg-white dark:bg-slate-800'} flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <input type="radio" name="slot_id_radio" value="${s.id}" ${isFull ? 'disabled' : ''} onclick="selectedSlotId = ${s.id}" class="text-emerald-600 focus:ring-emerald-500">
-            <div>
-              <span class="font-bold text-xs text-slate-900 dark:text-white block">${s.date}</span>
-              <span class="text-[11px] text-slate-500">${s.start_time} - ${s.end_time}</span>
-            </div>
-          </div>
-          <span class="text-[10px] font-extrabold px-2 py-0.5 rounded ${isFull ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'}">
-            ${isFull ? i18n.t('capacity_full') : `${s.available_capacity} Slots Left`}
-          </span>
-        </label>
-      `;
-    }).join('');
-    container.classList.remove("hidden");
+    const [dealers, slots] = await Promise.all([
+      api.getDealersByCentre(centreId),
+      api.getSlots(centreId)
+    ]);
+    cachedDealers = dealers || [];
+    cachedSlots = slots || [];
   } catch (e) {
-    alert(e.message);
+    console.error("Failed to load dealers/slots:", e);
+  }
+  renderApp();
+}
+
+function handleDealerSelection(dealerId) {
+  selectedDealerId = dealerId;
+  renderApp();
+}
+
+function handleSlotSelection(slotId) {
+  selectedSlotId = slotId;
+}
+
+function showAssignmentQRPass(active) {
+  state.setBookingForQR({
+    qr_token: active.qr_token,
+    booking_code: active.qr_token || active.booking_code,
+    raw_booking_code: active.booking_code,
+    token_number: active.token_number,
+    centre_name: active.centre_name,
+    crop_type: active.product_name,
+    expected_quantity_quintals: active.expected_quantity_quintals,
+    slot_date: active.slot_date,
+    slot_time: active.slot_time,
+    dealer_name: active.dealer_name,
+    dealer_business: active.dealer_business
+  });
+}
+
+async function handleCancelAssignment(assignmentId) {
+  if (!confirm("Are you sure you want to cancel your dealer assignment and booking?")) {
+    return;
+  }
+  try {
+    await api.cancelFarmerAssignment(assignmentId);
+    alert("Assignment successfully cancelled.");
+    renderApp();
+  } catch (err) {
+    alert(err.message || "Failed to cancel assignment.");
   }
 }
 
-async function handleConfirmSlotBooking(e) {
+async function handleConfirmFarmerAssignment(e) {
   e.preventDefault();
-  const centreId = document.getElementById("booking-centre-select")?.value;
-  const cropType = document.getElementById("booking-crop-select")?.value;
   const qty = document.getElementById("booking-quantity-input")?.value;
 
-  if (!centreId || !selectedSlotId) {
-    alert("Please select a valid procurement centre and time slot.");
+  if (!selectedCentreId || !selectedDealerId || !selectedSlotId) {
+    alert("Please select Crop, Procurement Centre, Authorized Dealer, and Slot.");
+    return;
+  }
+  if (!qty || parseFloat(qty) <= 0) {
+    alert("Please enter a valid expected produce quantity.");
     return;
   }
 
+  const btn = document.getElementById("btn-confirm-assignment");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="inline-flex items-center gap-2"><div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Generating QR Pass...</span>`;
+  }
+
   try {
-    const res = await api.bookSlot(centreId, selectedSlotId, cropType, qty);
+    const res = await api.createFarmerDealerAssignment({
+      centre_id: parseInt(selectedCentreId, 10),
+      dealer_id: parseInt(selectedDealerId, 10),
+      product_name: selectedCrop,
+      slot_id: parseInt(selectedSlotId, 10),
+      expected_quantity_quintals: parseFloat(qty)
+    });
+
     if (window.confetti) {
-      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+      try { confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } }); } catch (ce) {}
     }
+
+    alert(`Assignment created successfully!\n\nAuthorized Dealer: ${res.dealer_name}\nProcurement Centre: ${res.centre_name}\nToken Number: ${res.token_number}`);
+    
+    // Reset wizard state
+    selectedCentreId = null;
+    selectedDealerId = null;
+    selectedSlotId = null;
+    cachedDealers = [];
+    cachedSlots = [];
+
     state.setActiveTab('home');
     const notifs = await api.getNotifications();
     state.setNotifications(notifs);
   } catch (err) {
-    alert(err.message);
+    alert(err.message || "Failed to create assignment.");
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5"></i> Confirm Assignment & Generate QR Pass`;
+    }
   }
 }
 

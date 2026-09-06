@@ -15,6 +15,11 @@ class DealerStatus(str, enum.Enum):
     REJECTED = "REJECTED"
     SUSPENDED = "SUSPENDED"
 
+class AssignmentStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
 class BookingStatus(str, enum.Enum):
     BOOKED = "BOOKED"
     ARRIVED = "ARRIVED"
@@ -62,7 +67,7 @@ class User(Base):
     farmer_profile = relationship("FarmerProfile", back_populates="user", uselist=False)
     dealer_profile = relationship("DealerProfile", back_populates="user", uselist=False)
     notifications = relationship("Notification", back_populates="user")
-    bookings = relationship("Booking", back_populates="farmer")
+    bookings = relationship("Booking", back_populates="farmer", foreign_keys="Booking.farmer_id")
 
 class FarmerProfile(Base):
     __tablename__ = "farmer_profiles"
@@ -116,6 +121,7 @@ class ProcurementCentre(Base):
     contact_phone = Column(String, nullable=False)
     daily_capacity = Column(Integer, default=100) # In farmers/slots per day
     operating_hours = Column(String, default="08:00 AM - 05:00 PM")
+    supported_crops = Column(String, default="Rice,Paddy,Cotton,Maize,Chilli")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -123,6 +129,7 @@ class ProcurementCentre(Base):
     bookings = relationship("Booking", back_populates="centre")
     dealers = relationship("DealerProfile", back_populates="assigned_centre")
     queue_entries = relationship("QueueEntry", back_populates="centre")
+    farmer_assignments = relationship("FarmerDealerAssignment", back_populates="centre")
 
 class Slot(Base):
     __tablename__ = "slots"
@@ -139,6 +146,26 @@ class Slot(Base):
     centre = relationship("ProcurementCentre", back_populates="slots")
     bookings = relationship("Booking", back_populates="slot")
 
+class FarmerDealerAssignment(Base):
+    __tablename__ = "farmer_dealer_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assignment_code = Column(String, unique=True, index=True, nullable=False) # e.g. ASGN-8F72A91C
+    farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    dealer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    centre_id = Column(Integer, ForeignKey("procurement_centres.id"), nullable=False, index=True)
+    crop_type = Column(String, nullable=False, index=True) # e.g. Rice
+    booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True, index=True)
+    qr_token = Column(String, unique=True, index=True, nullable=False) # Secure opaque token for QR pass
+    status = Column(String, default=AssignmentStatus.ACTIVE, index=True) # ACTIVE, COMPLETED, CANCELLED
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    farmer = relationship("User", foreign_keys=[farmer_id], backref="dealer_assignments")
+    dealer = relationship("User", foreign_keys=[dealer_id], backref="assigned_farmer_relationships")
+    centre = relationship("ProcurementCentre", back_populates="farmer_assignments")
+    booking = relationship("Booking", back_populates="assignment", foreign_keys=[booking_id])
+
 class Booking(Base):
     __tablename__ = "bookings"
 
@@ -146,6 +173,7 @@ class Booking(Base):
     booking_code = Column(String, unique=True, index=True, nullable=False) # e.g. BOOK-8F72A91C
     token_number = Column(String, nullable=False)                         # e.g. PDC-1042
     farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    dealer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     centre_id = Column(Integer, ForeignKey("procurement_centres.id"), nullable=False)
     slot_id = Column(Integer, ForeignKey("slots.id"), nullable=False)
     crop_type = Column(String, nullable=False)                           # e.g. Paddy / Paddy (ధాన్యం)
@@ -155,9 +183,11 @@ class Booking(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    farmer = relationship("User", back_populates="bookings")
+    farmer = relationship("User", back_populates="bookings", foreign_keys=[farmer_id])
+    assigned_dealer = relationship("User", foreign_keys=[dealer_id])
     centre = relationship("ProcurementCentre", back_populates="bookings")
     slot = relationship("Slot", back_populates="bookings")
+    assignment = relationship("FarmerDealerAssignment", back_populates="booking", uselist=False)
     queue_entry = relationship("QueueEntry", back_populates="booking", uselist=False)
     transaction = relationship("ProcurementTransaction", back_populates="booking", uselist=False)
 

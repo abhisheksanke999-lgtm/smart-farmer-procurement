@@ -1,4 +1,19 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Ensure local .env file is loaded into os.environ before accessing any config or routers
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+ENV_FILE_PATH = BASE_DIR / ".env"
+if ENV_FILE_PATH.is_file():
+    load_dotenv(dotenv_path=str(ENV_FILE_PATH), override=False)
+else:
+    cwd_env = Path.cwd() / ".env"
+    if cwd_env.is_file():
+        load_dotenv(dotenv_path=str(cwd_env), override=False)
+    else:
+        load_dotenv(override=False)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -6,13 +21,15 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from .config import settings
 from .database import engine, Base
+from .migrate import run_migrations
 from .seed import seed_database
 
 # Import routers
 from .routers import auth, farmer, dealer, admin, notifications, ml
 
-# Create database tables
+# Create database tables and safe migrations
 Base.metadata.create_all(bind=engine)
+run_migrations()
 
 # Auto seed database with initial admin & sample data
 seed_database()

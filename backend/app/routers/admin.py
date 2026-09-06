@@ -8,12 +8,55 @@ from ..database import get_db
 from ..models import (
     User, UserRole, FarmerProfile, DealerProfile, DealerStatus, ProcurementCentre, Slot,
     Booking, BookingStatus, QueueEntry, QueueStatus, ProcurementTransaction, Payment, PaymentStatus,
-    Notification, NotificationType, AuditLog, Complaint
+    Notification, NotificationType, AuditLog, Complaint, FarmerDealerAssignment, AssignmentStatus
 )
 from ..schemas import DealerStatusUpdate, ProcurementCentreCreate, ComplaintResponse
 from ..auth import require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Government Module"])
+
+@router.get("/farmer-dealer-assignments")
+def get_farmer_dealer_assignments(status_filter: Optional[str] = None, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """
+    Returns complete relationship hierarchy for Admin visibility:
+    Farmer -> Product -> Procurement Center -> Dealer with status and timestamps.
+    """
+    query = db.query(FarmerDealerAssignment).order_by(FarmerDealerAssignment.created_at.desc())
+    if status_filter:
+        query = query.filter(FarmerDealerAssignment.status == status_filter)
+    assignments = query.all()
+
+    res = []
+    for a in assignments:
+        farmer = a.farmer
+        dealer = a.dealer
+        dp = dealer.dealer_profile if dealer else None
+        centre = a.centre
+        booking = a.booking
+
+        res.append({
+            "assignment_id": a.id,
+            "assignment_code": a.assignment_code,
+            "farmer_id": a.farmer_id,
+            "farmer_name": farmer.name if farmer else "Farmer",
+            "farmer_email": farmer.email if farmer else "",
+            "farmer_phone": farmer.phone if farmer else "",
+            "product_name": a.crop_type,
+            "centre_id": a.centre_id,
+            "centre_name": centre.name if centre else "",
+            "centre_location": centre.location if centre else "",
+            "dealer_id": a.dealer_id,
+            "dealer_name": dealer.name if dealer else "Dealer",
+            "dealer_business": dp.business_name if dp else "",
+            "dealer_phone": dealer.phone if dealer else "",
+            "booking_code": booking.booking_code if booking else "",
+            "token_number": booking.token_number if booking else "",
+            "status": a.status,
+            "qr_token": a.qr_token,
+            "created_at": a.created_at.strftime("%Y-%m-%d %H:%M"),
+            "updated_at": a.updated_at.strftime("%Y-%m-%d %H:%M") if a.updated_at else ""
+        })
+    return res
 
 @router.get("/dashboard-stats")
 def get_admin_dashboard_stats(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):

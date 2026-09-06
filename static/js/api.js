@@ -148,8 +148,35 @@ class ApiClient {
   }
 
   // Farmer Endpoints
-  async getCentres() {
-    return await this.request("/farmer/centres");
+  async getCentres(crop = null) {
+    let url = "/farmer/centres";
+    if (crop) url += `?crop=${encodeURIComponent(crop)}`;
+    return await this.request(url);
+  }
+
+  async getPublicCentres() {
+    return await this.request("/auth/centres");
+  }
+
+  async getDealersByCentre(centreId) {
+    return await this.request(`/farmer/dealers?centre_id=${centreId}`);
+  }
+
+  async createFarmerDealerAssignment(data) {
+    return await this.request("/farmer/create-assignment", {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getFarmerActiveAssignment() {
+    return await this.request("/farmer/active-assignment");
+  }
+
+  async cancelFarmerAssignment(assignmentId) {
+    return await this.request(`/farmer/cancel-assignment/${assignmentId}`, {
+      method: "POST"
+    });
   }
 
   async getSlots(centreId, date = null) {
@@ -158,14 +185,15 @@ class ApiClient {
     return await this.request(url);
   }
 
-  async bookSlot(centreId, slotId, cropType, expectedQuantity) {
+  async bookSlot(centreId, slotId, cropType, expectedQuantity, dealerId = null) {
     return await this.request("/farmer/book-slot", {
       method: "POST",
       body: JSON.stringify({
         centre_id: centreId,
         slot_id: slotId,
         crop_type: cropType,
-        expected_quantity_quintals: parseFloat(expectedQuantity)
+        expected_quantity_quintals: parseFloat(expectedQuantity),
+        dealer_id: dealerId
       })
     });
   }
@@ -196,6 +224,10 @@ class ApiClient {
     });
   }
 
+  async getDealerAssignedFarmers() {
+    return await this.request("/dealer/assigned-farmers");
+  }
+
   async processProcurement(bookingCode, actualQty, grade, rate, slipNo) {
     return await this.request("/dealer/process-procurement", {
       method: "POST",
@@ -216,6 +248,10 @@ class ApiClient {
   // Admin Endpoints
   async getAdminStats() {
     return await this.request("/admin/dashboard-stats");
+  }
+
+  async getAdminAssignments() {
+    return await this.request("/admin/farmer-dealer-assignments");
   }
 
   async getDealers(statusFilter = null) {
