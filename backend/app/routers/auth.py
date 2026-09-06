@@ -86,7 +86,8 @@ def build_user_dict(user: User) -> dict:
         }
     elif user.role == UserRole.DEALER and user.dealer_profile:
         dp = user.dealer_profile
-        centre_name = dp.centre.name if dp.centre else ""
+        assigned_centre = getattr(dp, "assigned_centre", None)
+        centre_name = assigned_centre.name if assigned_centre else ""
         user_dict["dealer_status"] = dp.status
         user_dict["business_name"] = dp.business_name
         user_dict["assigned_centre_id"] = dp.assigned_centre_id

@@ -108,6 +108,7 @@ class DealerProfile(Base):
 
     user = relationship("User", back_populates="dealer_profile")
     assigned_centre = relationship("ProcurementCentre", back_populates="dealers")
+    centre = relationship("ProcurementCentre", foreign_keys=[assigned_centre_id], viewonly=True)
 
 class ProcurementCentre(Base):
     __tablename__ = "procurement_centres"
