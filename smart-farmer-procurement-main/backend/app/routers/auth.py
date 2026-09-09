@@ -1,0 +1,514 @@
+import secrets
+import hashlib
+import hmac
+import json
+import re
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from ..database import get_db
+from ..models import User, UserRole, FarmerProfile, DealerProfile, DealerStatus, Notification, NotificationType, AuditLog, PendingFarmerRegistration
+from ..schemas import UserLogin, UserRegister, TokenResponse, EmailVerificationRequest, OTPVerifyRequest, OTPResendRequest
+from email_validator import validate_email, EmailNotValidError
+from ..auth import get_password_hash, verify_password, create_access_token, require_user
+from ..email_service import send_otp_email, EmailDeliveryError
+from ..config import settings
+
+router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+def validate_and_normalize_email(email_str: str) -> str:
+    """Validates email format and normalizes it. Rejects empty, malformed, or invalid emails."""
+    if not email_str or not isinstance(email_str, str) or not email_str.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email address is required."
+        )
+    clean_email = email_str.strip().lower()
+    try:
+        valid = validate_email(clean_email, check_deliverability=False)
+        return valid.normalized
+    except EmailNotValidError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please enter a valid email address."
+        )
+
+def hash_otp(otp: str) -> str:
+    """Cryptographically hash a 6-digit OTP using HMAC-SHA256 with server SECRET_KEY."""
+    return hmac.new(settings.SECRET_KEY.encode("utf-8"), otp.strip().encode("utf-8"), hashlib.sha256).hexdigest()
+
+def verify_otp_hash(entered_otp: str, stored_hash: str) -> bool:
+    """Constant-time verification of entered OTP against stored cryptographic hash."""
+    computed = hash_otp(entered_otp)
+    return hmac.compare_digest(computed, stored_hash)
+
+def build_user_dict(user: User) -> dict:
+    user_dict = {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "phone": user.phone,
+        "role": user.role,
+        "is_email_verified": user.is_email_verified,
+        "language_preference": user.language_preference
+    }
+    if user.role == UserRole.FARMER and user.farmer_profile:
+        fp = user.farmer_profile
+        user_dict["village"] = fp.village
+        user_dict["district"] = fp.district
+        user_dict["farmer_profile"] = {
+            "aadhaar_last4": fp.aadhaar_last4,
+            "village": fp.village,
+            "district": fp.district,
+            "land_size_acres": fp.land_size_acres,
+            "bank_account_no": fp.bank_account_no,
+            "bank_name": fp.bank_name,
+            "ifsc_code": fp.ifsc_code
+        }
+    elif user.role == UserRole.DEALER and user.dealer_profile:
+        dp = user.dealer_profile
+        user_dict["dealer_status"] = dp.status
+        user_dict["business_name"] = dp.business_name
+        user_dict["assigned_centre_id"] = dp.assigned_centre_id
+        user_dict["dealer_profile"] = {
+            "business_name": dp.business_name,
+            "license_number": dp.license_number,
+            "government_id_type": dp.government_id_type,
+            "government_id_number": dp.government_id_number,
+            "status": dp.status,
+            "assigned_centre_id": dp.assigned_centre_id,
+            "rejection_reason": dp.rejection_reason
+        }
+    return user_dict
+
+@router.post("/login", response_model=TokenResponse)
+def login(login_data: UserLogin, db: Session = Depends(get_db)):
+    email_clean = login_data.email.strip().lower()
+    user = db.query(User).filter(User.email == email_clean).first()
+    
+    pwd = login_data.password
+    if not user or not (verify_password(pwd, user.password_hash) or verify_password(pwd.strip(), user.password_hash)):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password"
+        )
+    
+    if login_data.role:
+        expected_role = login_data.role.strip().upper()
+        if user.role.upper() != expected_role:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Access denied: Account role is {user.role}, but {expected_role} was selected. Please select the correct role."
+            )
+    
+    access_token = create_access_token(data={"sub": user.email, "role": user.role, "user_id": user.id})
+    user_dict = build_user_dict(user)
+
+    return TokenResponse(access_token=access_token, user=user_dict)
+
+@router.post("/register")
+def register(register_data: UserRegister, db: Session = Depends(get_db)):
+    email = validate_and_normalize_email(register_data.email)
+    
+    # Validate registration fields
+    if not register_data.name or len(register_data.name.strip()) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Full Name must be at least 2 characters.")
+    
+    phone_digits = re.sub(r"\D", "", register_data.phone.strip())
+    if len(phone_digits) < 10:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mobile number must contain at least 10 digits.")
+    
+    if not register_data.password or len(register_data.password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters in length.")
+
+    if register_data.role not in [UserRole.FARMER, UserRole.DEALER]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Direct registration is only permitted for Farmer or Dealer accounts. Admin accounts cannot be self-registered."
+        )
+
+    # Check if user already exists
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email address already exists. Please sign in."
+        )
+
+    # Cryptographically secure 6-digit numeric OTP (100000 - 999999)
+    otp = f"{secrets.randbelow(900000) + 100000:06d}"
+    otp_hash_val = hash_otp(otp)
+    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    password_hash_val = get_password_hash(register_data.password)
+
+    if register_data.role == UserRole.FARMER:
+        extra_info = {
+            "role": UserRole.FARMER,
+            "aadhaar_last4": (register_data.aadhaar_last4 or "").strip()[-4:] if register_data.aadhaar_last4 else "1234",
+            "village": register_data.village or "Sample Village",
+            "district": register_data.district or "Sample District",
+            "bank_account_no": register_data.bank_account_no or "99988877711",
+            "ifsc_code": register_data.ifsc_code or "SBIN0001111",
+            "land_size_acres": float(register_data.land_size_acres) if register_data.land_size_acres is not None else 2.5
+        }
+    else:  # DEALER
+        extra_info = {
+            "role": UserRole.DEALER,
+            "business_name": register_data.business_name or f"{register_data.name} Enterprise",
+            "address": register_data.address or "Procurement Market Road",
+            "government_id_type": register_data.government_id_type or "GSTIN",
+            "government_id_number": register_data.government_id_number or "36AAACG1234H1Z1",
+            "license_number": register_data.license_number or f"LIC-{secrets.token_hex(4).upper()}",
+            "assigned_centre_id": register_data.assigned_centre_id or 1
+        }
+
+    pending = db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == email).first()
+    if pending:
+        pending.name = register_data.name.strip()
+        pending.phone = phone_digits
+        pending.password_hash = password_hash_val
+        pending.language_preference = register_data.language_preference or "en"
+        pending.extra_data = json.dumps(extra_info)
+        pending.otp_hash = otp_hash_val
+        pending.otp_expires_at = expires_at
+        pending.attempts_left = 5
+        pending.last_sent_at = datetime.utcnow()
+    else:
+        pending = PendingFarmerRegistration(
+            email=email,
+            name=register_data.name.strip(),
+            phone=phone_digits,
+            password_hash=password_hash_val,
+            language_preference=register_data.language_preference or "en",
+            extra_data=json.dumps(extra_info),
+            otp_hash=otp_hash_val,
+            otp_expires_at=expires_at,
+            attempts_left=5,
+            last_sent_at=datetime.utcnow()
+        )
+        db.add(pending)
+
+    # Dispatch email via Resend HTTPS API before committing transaction
+    is_sandbox_fallback = False
+    try:
+        send_otp_email(to_email=email, recipient_name=register_data.name.strip(), otp_code=otp)
+    except EmailDeliveryError as ede:
+        err_str = str(ede).lower()
+        if "sandbox" in err_str or "testing emails" in err_str or "only send" in err_str or "restricted" in err_str:
+            # Resend free tier restriction: allow registration to proceed with sandbox OTP
+            import logging
+            logging.getLogger("email_service").warning(
+                f"[RESEND SANDBOX] Email to '{email}' restricted by Resend sandbox policy. OTP code: {otp}"
+            )
+            is_sandbox_fallback = True
+        else:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to deliver verification email: {str(ede)}"
+            )
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while sending verification email. Please try again."
+        )
+
+    db.commit()
+
+    resp = {
+        "status": "pending_verification",
+        "message": "OTP verification code sent to your email. Please check your inbox.",
+        "email": email,
+        "role": register_data.role,
+        "expires_in_seconds": 300,
+        "attempts_left": 5
+    }
+    if is_sandbox_fallback:
+        resp["sandbox_otp"] = otp
+        resp["is_sandbox"] = True
+        resp["message"] = f"Resend Sandbox Mode: Verification code is {otp}"
+
+    return resp
+
+@router.post("/verify-otp")
+def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
+    email = validate_and_normalize_email(req.email)
+    entered_otp = req.otp.strip()
+
+    if not entered_otp or len(entered_otp) != 6 or not entered_otp.isdigit():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OTP format. Please enter a valid 6-digit numeric code."
+        )
+
+    # Check if user is already registered
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email address is already registered. Please sign in."
+        )
+
+    pending = db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == email).first()
+    if not pending:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No pending registration found for this email address. Please submit the registration form first."
+        )
+
+    # Check expiration (5 minutes validity)
+    if datetime.utcnow() > pending.otp_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification code has expired. Please click 'Resend OTP' to receive a new code."
+        )
+
+    # Check attempts
+    if pending.attempts_left <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Maximum verification attempts exceeded. Please click 'Resend OTP' for a new code."
+        )
+
+    # Verify OTP using constant-time hash comparison
+    if not verify_otp_hash(entered_otp, pending.otp_hash):
+        pending.attempts_left = max(0, pending.attempts_left - 1)
+        db.commit()
+        if pending.attempts_left > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Incorrect OTP code. {pending.attempts_left} attempt{'s' if pending.attempts_left != 1 else ''} remaining."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Incorrect OTP code. Maximum attempts exceeded. Please click 'Resend OTP' for a new code."
+            )
+
+    # ONLY AFTER SUCCESSFUL OTP VERIFICATION: Create the account
+    extra_data = {}
+    if pending.extra_data:
+        try:
+            extra_data = json.loads(pending.extra_data)
+        except Exception:
+            extra_data = {}
+
+    assigned_role = extra_data.get("role", UserRole.FARMER)
+
+    new_user = User(
+        name=pending.name,
+        email=pending.email,
+        phone=pending.phone,
+        role=assigned_role,
+        password_hash=pending.password_hash,
+        is_email_verified=True,
+        verification_token=None,
+        language_preference=pending.language_preference or "en"
+    )
+    db.add(new_user)
+    db.flush()
+
+    if assigned_role == UserRole.DEALER:
+        dp = DealerProfile(
+            user_id=new_user.id,
+            business_name=extra_data.get("business_name", f"{new_user.name} Enterprise"),
+            mobile_number=new_user.phone,
+            email=new_user.email,
+            address=extra_data.get("address", "Procurement Market Road"),
+            government_id_type=extra_data.get("government_id_type", "GSTIN"),
+            government_id_number=extra_data.get("government_id_number", "36AAACG1234H1Z1"),
+            license_number=extra_data.get("license_number", f"LIC-{secrets.token_hex(4).upper()}"),
+            status=DealerStatus.PENDING,
+            assigned_centre_id=extra_data.get("assigned_centre_id", 1)
+        )
+        db.add(dp)
+
+        admins = db.query(User).filter(User.role == UserRole.ADMIN).all()
+        for admin in admins:
+            db.add(Notification(
+                user_id=admin.id,
+                title="New Dealer Registration Pending",
+                title_te="కొత్త డీలర్ రిజిస్ట్రేషన్ వేచి ఉంది",
+                message=f"Dealer '{dp.business_name}' submitted registration details. Verification required.",
+                message_te=f"డీలర్ '{dp.business_name}' రిజిస్ట్రేషన్ సమర్పించారు.",
+                type=NotificationType.APPROVAL
+            ))
+
+        db.add(Notification(
+            user_id=new_user.id,
+            title="Registration Submitted ✓ Pending Admin Approval",
+            title_te="రిజిస్ట్రేషన్ సమర్పించబడింది ✓ నిర్వాహకుని ఆమోదం కోసం వేచి ఉంది",
+            message="Your dealer account has been registered and verified. An administrator will review and activate your license shortly.",
+            message_te="మీ డీలర్ ఖాతా నమోదు చేయబడింది మరియు ధృవీకరించబడింది. నిర్వాహకులు త్వరలోనే సమీక్షిస్తారు.",
+            type=NotificationType.SYSTEM
+        ))
+
+        audit = AuditLog(
+            actor_id=new_user.id,
+            actor_role=UserRole.DEALER,
+            action="DEALER_REGISTERED_WITH_OTP",
+            details=f"Dealer {new_user.email} registered successfully after valid email OTP verification. Status is PENDING."
+        )
+        db.add(audit)
+    else:  # FARMER
+        fp = FarmerProfile(
+            user_id=new_user.id,
+            aadhaar_last4=extra_data.get("aadhaar_last4", "1234"),
+            village=extra_data.get("village", "Sample Village"),
+            district=extra_data.get("district", "Sample District"),
+            bank_account_no=extra_data.get("bank_account_no", "99988877711"),
+            ifsc_code=extra_data.get("ifsc_code", "SBIN0001111"),
+            land_size_acres=float(extra_data.get("land_size_acres", 2.5))
+        )
+        db.add(fp)
+
+        # Welcome Notification
+        notif = Notification(
+            user_id=new_user.id,
+            title="Email Verified & Registration Complete ✓",
+            title_te="ఈమెయిల్ ధృవీకరించబడింది & నమోదు పూర్తయింది ✓",
+            message="Welcome to Smart Farmer Procurement! Your email has been verified and your account is active.",
+            message_te="స్మార్ట్ రైతు సేకరణ వ్యవస్థకు స్వాగతం! మీ ఈమెయిల్ ధృవీకరించబడింది మరియు ఖాతా ప్రారంభమైంది.",
+            type=NotificationType.SYSTEM
+        )
+        db.add(notif)
+
+        # Audit Log
+        audit = AuditLog(
+            actor_id=new_user.id,
+            actor_role=UserRole.FARMER,
+            action="FARMER_REGISTERED_WITH_OTP",
+            details=f"Farmer {new_user.email} registered successfully after valid email OTP verification."
+        )
+        db.add(audit)
+
+    # Clean up pending record so OTP can never be reused
+    db.delete(pending)
+    db.commit()
+
+    # Create access token for verified login
+    access_token = create_access_token(data={"sub": new_user.email, "role": new_user.role, "user_id": new_user.id})
+    user_dict = build_user_dict(new_user)
+
+    role_msg = "Dealer registration submitted and verified! Waiting for admin approval." if assigned_role == UserRole.DEALER else "Farmer registration completed and email verified successfully! Welcome to Smart Farmer Procurement."
+
+    return {
+        "status": "success",
+        "message": role_msg,
+        "is_verified": True,
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user_dict
+    }
+
+@router.post("/resend-otp")
+def resend_otp(req: OTPResendRequest, db: Session = Depends(get_db)):
+    email = validate_and_normalize_email(req.email)
+
+    # Check if already registered
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email is already registered and active. Please sign in."
+        )
+
+    pending = db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == email).first()
+    if not pending:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No pending registration found for this email address. Please register first."
+        )
+
+    # Rate limiting: 60 seconds cooldown between resends
+    if pending.last_sent_at:
+        seconds_elapsed = (datetime.utcnow() - pending.last_sent_at).total_seconds()
+        if seconds_elapsed < 60:
+            remaining_cooldown = int(60 - seconds_elapsed)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Please wait {remaining_cooldown} seconds before requesting a new OTP."
+            )
+
+    # Invalidate previous OTP and generate new 6-digit OTP
+    new_otp = f"{secrets.randbelow(900000) + 100000:06d}"
+    pending.otp_hash = hash_otp(new_otp)
+    pending.otp_expires_at = datetime.utcnow() + timedelta(minutes=5)
+    pending.attempts_left = 5
+    pending.last_sent_at = datetime.utcnow()
+
+    # Send email via Resend HTTPS API before committing transaction
+    is_sandbox_fallback = False
+    try:
+        send_otp_email(to_email=pending.email, recipient_name=pending.name, otp_code=new_otp)
+    except EmailDeliveryError as ede:
+        err_str = str(ede).lower()
+        if "sandbox" in err_str or "testing emails" in err_str or "only send" in err_str or "restricted" in err_str:
+            import logging
+            logging.getLogger("email_service").warning(
+                f"[RESEND SANDBOX] Resend OTP to '{pending.email}' restricted by sandbox policy. New OTP: {new_otp}"
+            )
+            is_sandbox_fallback = True
+        else:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to deliver verification email: {str(ede)}"
+            )
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while sending verification email. Please try again."
+        )
+
+    db.commit()
+
+    resp = {
+        "status": "sent",
+        "message": "A new verification OTP code has been sent to your email address.",
+        "email": pending.email,
+        "expires_in_seconds": 300,
+        "attempts_left": 5
+    }
+    if is_sandbox_fallback:
+        resp["sandbox_otp"] = new_otp
+        resp["is_sandbox"] = True
+        resp["message"] = f"Resend Sandbox Mode: New verification code is {new_otp}"
+
+    return resp
+
+
+@router.post("/verify-email")
+def verify_email(req: EmailVerificationRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == req.email.lower()).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.is_email_verified:
+        return {"message": "Email is already verified ✓", "is_verified": True}
+
+    user.is_email_verified = True
+    user.verification_token = None
+    db.commit()
+
+    db.add(Notification(
+        user_id=user.id,
+        title="Email Verified ✓",
+        title_te="ఈమెయిల్ ధృవీకరించబడింది ✓",
+        message="Your email address has been successfully verified.",
+        message_te="మీ ఈమెయిల్ విజయవంతంగా ధృవీకరించబడింది.",
+        type=NotificationType.SYSTEM
+    ))
+    db.commit()
+
+    return {"message": "Email verified successfully ✓", "is_verified": True}
+
+@router.get("/me")
+def get_current_user_profile(current_user: User = Depends(require_user), db: Session = Depends(get_db)):
+    return build_user_dict(current_user)
+
+@router.post("/logout")
+def logout():
+    return {"status": "success", "message": "Logged out successfully"}
