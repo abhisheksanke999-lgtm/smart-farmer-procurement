@@ -31,6 +31,7 @@ def get_assigned_farmers(current_user: User = Depends(require_dealer), db: Sessi
         farmer = a.farmer
         fp = farmer.farmer_profile if farmer else None
         booking = a.booking
+        cat_name = a.category.name if a.category else (current_user.dealer_profile.category.name if current_user.dealer_profile and current_user.dealer_profile.category else "Paddy")
         res.append({
             "assignment_id": a.id,
             "assignment_code": a.assignment_code,
@@ -40,6 +41,7 @@ def get_assigned_farmers(current_user: User = Depends(require_dealer), db: Sessi
             "village": fp.village if fp else "",
             "district": fp.district if fp else "",
             "product_name": a.crop_type,
+            "category_name": cat_name,
             "centre_id": a.centre_id,
             "centre_name": a.centre.name if a.centre else "",
             "token_number": booking.token_number if booking else "",
@@ -148,6 +150,23 @@ def validate_qr_code(req: QRScanRequest, current_user: User = Depends(require_de
             "message": f"CENTRE MISMATCH: Pass is registered for '{centre_name}', not your assigned centre."
         }
 
+    # 5b. STRICT CATEGORY VERIFICATION: Check produce category matches dealer's category
+    crop_name = assignment.crop_type if assignment else (booking.crop_type if booking else "")
+    dealer_cat_name = dp.category.name if dp.category else "Paddy"
+    crop_lower = crop_name.lower()
+    cat_lower = dealer_cat_name.lower()
+    is_cat_match = (
+        cat_lower in crop_lower or
+        crop_lower in cat_lower or
+        (("paddy" in crop_lower or "rice" in crop_lower) and ("paddy" in cat_lower or "rice" in cat_lower)) or
+        ("cotton" in crop_lower and "cotton" in cat_lower)
+    )
+    if not is_cat_match:
+        return {
+            "is_valid": False,
+            "message": f"CATEGORY MISMATCH: Pass is for '{crop_name}'. You are authorized only for '{dealer_cat_name}'."
+        }
+
     # 6. Valid Pass! Update booking status to VERIFIED
     farmer_id = assignment.farmer_id if assignment else (booking.farmer_id if booking else None)
     farmer = db.query(User).filter(User.id == farmer_id).first() if farmer_id else None
@@ -202,6 +221,23 @@ def process_procurement(proc: ProcurementCreate, current_user: User = Depends(re
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not authorized to process procurement for this farmer."
+        )
+
+    # Verify Product Category Match
+    crop_name = booking.crop_type or ""
+    dealer_cat_name = dp.category.name if dp.category else "Paddy"
+    crop_lower = crop_name.lower()
+    cat_lower = dealer_cat_name.lower()
+    is_cat_match = (
+        cat_lower in crop_lower or
+        crop_lower in cat_lower or
+        (("paddy" in crop_lower or "rice" in crop_lower) and ("paddy" in cat_lower or "rice" in cat_lower)) or
+        ("cotton" in crop_lower and "cotton" in cat_lower)
+    )
+    if not is_cat_match:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Category mismatch: Cannot process procurement for '{crop_name}'. You are authorized only for '{dealer_cat_name}'."
         )
 
     if booking.status == BookingStatus.PROCUREMENT_COMPLETED:

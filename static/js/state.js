@@ -1,6 +1,17 @@
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+window.escapeHtml = escapeHtml;
+
 const ROLE_ALLOWED_TABS = {
-  ADMIN: ['dashboard', 'approvals', 'centres', 'admin_payments', 'complaints'],
-  FARMER: ['home', 'book_slot', 'live_queue', 'receipts', 'payments'],
+  ADMIN: ['dashboard', 'approvals', 'dealers', 'centres', 'farmers', 'assignments', 'live_activity', 'admin_payments', 'complaints'],
+  FARMER: ['home', 'book_slot', 'live_queue', 'receipts', 'payments', 'my_bookings', 'center_status'],
   DEALER: ['home', 'scan_qr', 'process_procurement_form', 'transactions']
 };
 

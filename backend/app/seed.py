@@ -1,16 +1,19 @@
 import os
 import random
 from datetime import datetime, timedelta
+import zoneinfo
 from sqlalchemy.orm import Session
 from .database import engine, Base, SessionLocal
 from .models import (
-    User, UserRole, ProcurementCentre, Slot, AuditLog
+    User, UserRole, ProcurementCentre, Slot, AuditLog, Category
 )
 from .auth import get_password_hash
 
+IST = zoneinfo.ZoneInfo("Asia/Kolkata")
+
 def seed_database():
     """
-    Ensures initial Admin user and default Procurement Centres exist.
+    Ensures initial Admin user, Product Categories, and default Procurement Centres exist.
     DOES NOT insert dummy/test farmers or dummy/test dealers.
     All Farmers and Dealers register via real registration with Email OTP verification.
     """
@@ -40,7 +43,27 @@ def seed_database():
             admin.is_email_verified = True
             db.flush()
 
-        # 2. Ensure Procurement Centres exist (including Bhimavaram, Palakollu, Tanuku)
+        # 2. Ensure Standard Product Categories exist
+        standard_categories = [
+            {
+                "name": "Paddy",
+                "description": "Paddy & Rice Grain Procurement (ధాన్యం)",
+                "status": "ACTIVE"
+            },
+            {
+                "name": "Cotton",
+                "description": "Cotton & Fiber Procurement (ప్రత్తి)",
+                "status": "ACTIVE"
+            }
+        ]
+        for cat_data in standard_categories:
+            cat_exists = db.query(Category).filter(Category.name == cat_data["name"]).first()
+            if not cat_exists:
+                new_cat = Category(**cat_data)
+                db.add(new_cat)
+                db.flush()
+
+        # 3. Ensure Procurement Centres exist (including Bhimavaram, Palakollu, Tanuku)
         standard_centres = [
             {
                 "name": "Bhimavaram Procurement Center",
@@ -134,12 +157,13 @@ def seed_database():
 
         all_centres = db.query(ProcurementCentre).all()
 
-        # 3. Ensure Slots exist for all active centres
-        today = datetime.now().date()
+        # 4. Ensure Slots exist for all active centres in IST timezone
+        today_ist = datetime.now(IST).date()
         dates = [
-            today.strftime("%Y-%m-%d"),
-            (today + timedelta(days=1)).strftime("%Y-%m-%d"),
-            (today + timedelta(days=2)).strftime("%Y-%m-%d")
+            today_ist.strftime("%Y-%m-%d"),
+            (today_ist + timedelta(days=1)).strftime("%Y-%m-%d"),
+            (today_ist + timedelta(days=2)).strftime("%Y-%m-%d"),
+            (today_ist + timedelta(days=3)).strftime("%Y-%m-%d")
         ]
         time_slots = [
             ("08:00 AM", "10:00 AM"),
@@ -168,7 +192,7 @@ def seed_database():
                         db.add(slot)
         db.flush()
 
-        # 4. Ensure System Audit Log exists
+        # 5. Ensure System Audit Log exists
         init_audit = db.query(AuditLog).filter(AuditLog.action == "SYSTEM_INIT").first()
         if not init_audit:
             audit = AuditLog(

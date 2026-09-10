@@ -61,6 +61,197 @@ body.dark-mode .glass-card {
   color: #f8fafc;
 }
 
+/* Highlighted Auth Card with prominent border and glow */
+.auth-highlight-card {
+  border: 3px solid #059669 !important;
+  box-shadow: 0 0 0 5px rgba(5, 150, 105, 0.22), 0 25px 50px -12px rgba(5, 150, 105, 0.28), 0 10px 20px -5px rgba(0, 0, 0, 0.1) !important;
+  border-radius: 1.5rem !important;
+}
+
+html.dark .auth-highlight-card,
+body.dark-mode .auth-highlight-card {
+  border: 3px solid #10b981 !important;
+  box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.3), 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 35px rgba(16, 185, 129, 0.3) !important;
+}
+
+/* Highlighted Quick Action Cards (Moderately enlarged box & letters) */
+.action-card-highlight-emerald {
+  border: 2.5px solid #059669 !important;
+  box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.15), 0 10px 25px -5px rgba(5, 150, 105, 0.15) !important;
+  border-radius: 1.25rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.action-card-highlight-emerald:hover {
+  border-color: #047857 !important;
+  box-shadow: 0 0 0 6px rgba(5, 150, 105, 0.25), 0 20px 30px -10px rgba(5, 150, 105, 0.28) !important;
+  transform: translateY(-3px) scale(1.015);
+}
+
+.action-card-highlight-amber {
+  border: 2.5px solid #d97706 !important;
+  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.15), 0 10px 25px -5px rgba(217, 119, 6, 0.15) !important;
+  border-radius: 1.25rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.action-card-highlight-amber:hover {
+  border-color: #b45309 !important;
+  box-shadow: 0 0 0 6px rgba(217, 119, 6, 0.25), 0 20px 30px -10px rgba(217, 119, 6, 0.28) !important;
+  transform: translateY(-3px) scale(1.015);
+}
+
+.action-card-highlight-blue {
+  border: 2.5px solid #2563eb !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15), 0 10px 25px -5px rgba(37, 99, 235, 0.15) !important;
+  border-radius: 1.25rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.action-card-highlight-blue:hover {
+  border-color: #1d4ed8 !important;
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.25), 0 20px 30px -10px rgba(37, 99, 235, 0.28) !important;
+  transform: translateY(-3px) scale(1.015);
+}
+
+.action-card-highlight-orange {
+  border: 2.5px solid #ea580c !important;
+  box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.15), 0 10px 25px -5px rgba(234, 88, 12, 0.15) !important;
+  border-radius: 1.25rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.action-card-highlight-orange:hover {
+  border-color: #c2410c !important;
+  box-shadow: 0 0 0 6px rgba(234, 88, 12, 0.25), 0 20px 30px -10px rgba(234, 88, 12, 0.28) !important;
+  transform: translateY(-3px) scale(1.015);
+}
+
+.action-card-highlight-teal {
+  border: 2.5px solid #0d9488 !important;
+  box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.15), 0 10px 25px -5px rgba(13, 148, 136, 0.15) !important;
+  border-radius: 1.25rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.action-card-highlight-teal:hover {
+  border-color: #0f766e !important;
+  box-shadow: 0 0 0 6px rgba(13, 148, 136, 0.25), 0 20px 30px -10px rgba(13, 148, 136, 0.28) !important;
+  transform: translateY(-3px) scale(1.015);
+}
+
+.action-card-highlight-sky {
+  border: 2.5px solid #0284c7 !important;
+  box-shadow: 0 0 0 4px rgba(2, 132, 199, 0.15), 0 10px 25px -5px rgba(2, 132, 199, 0.15) !important;
+  border-radius: 1.25rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.action-card-highlight-sky:hover {
+  border-color: #0369a1 !important;
+  box-shadow: 0 0 0 6px rgba(2, 132, 199, 0.25), 0 20px 30px -10px rgba(2, 132, 199, 0.28) !important;
+  transform: translateY(-3px) scale(1.015);
+}
+
+.action-card-highlight-purple {
+  border: 2.5px solid #9333ea !important;
+  box-shadow: 0 0 0 4px rgba(147, 51, 234, 0.15), 0 10px 25px -5px rgba(147, 51, 234, 0.15) !important;
+  border-radius: 1.25rem !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+.action-card-highlight-purple:hover {
+  border-color: #7e22ce !important;
+  box-shadow: 0 0 0 6px rgba(147, 51, 234, 0.25), 0 20px 30px -10px rgba(147, 51, 234, 0.28) !important;
+  transform: translateY(-3px) scale(1.015);
+}
+
+html.dark .action-card-highlight-emerald {
+  border: 2.5px solid #10b981 !important;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2), 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark .action-card-highlight-orange {
+  border: 2.5px solid #f97316 !important;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.2), 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark .action-card-highlight-teal {
+  border: 2.5px solid #14b8a6 !important;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.2), 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark .action-card-highlight-sky {
+  border: 2.5px solid #38bdf8 !important;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.2), 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark .action-card-highlight-amber {
+  border: 2.5px solid #f59e0b !important;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2), 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark .action-card-highlight-blue {
+  border: 2.5px solid #3b82f6 !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2), 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+html.dark .action-card-highlight-purple {
+  border: 2.5px solid #a855f7 !important;
+  box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.2), 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+
+
+/* Enlarge Typography for Auth Card & Required Asterisks (Balanced Sizes) */
+.auth-highlight-card label {
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  display: flex !important;
+  align-items: center !important;
+  margin-bottom: 0.35rem !important;
+  letter-spacing: normal !important;
+}
+
+html.dark .auth-highlight-card label,
+body.dark-mode .auth-highlight-card label {
+  color: #f1f5f9 !important;
+}
+
+.auth-highlight-card input,
+.auth-highlight-card select {
+  font-size: 0.95rem !important;
+  padding: 0.75rem 1rem !important;
+  font-weight: 500 !important;
+  border-width: 1.5px !important;
+  color: #0f172a !important;
+}
+
+html.dark .auth-highlight-card input,
+html.dark .auth-highlight-card select,
+body.dark-mode .auth-highlight-card input,
+body.dark-mode .auth-highlight-card select {
+  color: #f8fafc !important;
+  background-color: #1e293b !important;
+}
+
+.auth-highlight-card button.btn-agri {
+  font-size: 1.05rem !important;
+  padding: 0.85rem 1.25rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.auth-highlight-card .role-toggle-btn {
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  padding: 0.75rem 0.5rem !important;
+}
+
+.auth-highlight-card .tab-toggle-btn {
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  padding: 0.65rem 0.9rem !important;
+}
+
+.required-star,
+.auth-highlight-card .required-star {
+  color: #ef4444 !important;
+  font-size: 1.15rem !important;
+  font-weight: 900 !important;
+  margin-left: 0.25rem !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+  display: inline-block !important;
+}
+
 /* Agriculture Gradient Header */
 .agri-gradient {
   background: linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%);

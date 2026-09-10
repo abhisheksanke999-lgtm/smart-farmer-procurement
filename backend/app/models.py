@@ -69,6 +69,19 @@ class User(Base):
     notifications = relationship("Notification", back_populates="user")
     bookings = relationship("Booking", back_populates="farmer", foreign_keys="Booking.farmer_id")
 
+class Category(Base):
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False) # e.g. "Paddy", "Cotton"
+    description = Column(String, nullable=True)
+    status = Column(String, default="ACTIVE") # ACTIVE, INACTIVE
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    dealers = relationship("DealerProfile", back_populates="category")
+    bookings = relationship("Booking", back_populates="category")
+    assignments = relationship("FarmerDealerAssignment", back_populates="category")
+
 class FarmerProfile(Base):
     __tablename__ = "farmer_profiles"
 
@@ -101,12 +114,14 @@ class DealerProfile(Base):
     license_number = Column(String, nullable=False)
     status = Column(String, default=DealerStatus.PENDING)
     assigned_centre_id = Column(Integer, ForeignKey("procurement_centres.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     rejection_reason = Column(Text, nullable=True)
     verification_documents_url = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="dealer_profile")
+    category = relationship("Category", back_populates="dealers")
     assigned_centre = relationship("ProcurementCentre", back_populates="dealers")
     centre = relationship("ProcurementCentre", foreign_keys=[assigned_centre_id], viewonly=True)
 
@@ -155,6 +170,7 @@ class FarmerDealerAssignment(Base):
     farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     dealer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     centre_id = Column(Integer, ForeignKey("procurement_centres.id"), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True, index=True)
     crop_type = Column(String, nullable=False, index=True) # e.g. Rice
     booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True, index=True)
     qr_token = Column(String, unique=True, index=True, nullable=False) # Secure opaque token for QR pass
@@ -165,6 +181,7 @@ class FarmerDealerAssignment(Base):
     farmer = relationship("User", foreign_keys=[farmer_id], backref="dealer_assignments")
     dealer = relationship("User", foreign_keys=[dealer_id], backref="assigned_farmer_relationships")
     centre = relationship("ProcurementCentre", back_populates="farmer_assignments")
+    category = relationship("Category", back_populates="assignments")
     booking = relationship("Booking", back_populates="assignment", foreign_keys=[booking_id])
 
 class Booking(Base):
@@ -176,6 +193,7 @@ class Booking(Base):
     farmer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     dealer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     centre_id = Column(Integer, ForeignKey("procurement_centres.id"), nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True, index=True)
     slot_id = Column(Integer, ForeignKey("slots.id"), nullable=False)
     crop_type = Column(String, nullable=False)                           # e.g. Paddy / Paddy (ధాన్యం)
     expected_quantity_quintals = Column(Float, nullable=False)
@@ -187,6 +205,7 @@ class Booking(Base):
     farmer = relationship("User", back_populates="bookings", foreign_keys=[farmer_id])
     assigned_dealer = relationship("User", foreign_keys=[dealer_id])
     centre = relationship("ProcurementCentre", back_populates="bookings")
+    category = relationship("Category", back_populates="bookings")
     slot = relationship("Slot", back_populates="bookings")
     assignment = relationship("FarmerDealerAssignment", back_populates="booking", uselist=False)
     queue_entry = relationship("QueueEntry", back_populates="booking", uselist=False)
@@ -224,6 +243,8 @@ class ProcurementTransaction(Base):
     transaction_time = Column(DateTime, default=datetime.utcnow)
 
     booking = relationship("Booking", back_populates="transaction")
+    farmer = relationship("User", foreign_keys=[farmer_id])
+    dealer = relationship("User", foreign_keys=[dealer_id])
     payment = relationship("Payment", back_populates="transaction", uselist=False)
 
 class Payment(Base):
@@ -295,4 +316,19 @@ class PendingFarmerRegistration(Base):
     last_sent_at = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MSPRate(Base):
+    __tablename__ = "msp_rates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    crop_name = Column(String, nullable=False)
+    rate_per_quintal = Column(Float, nullable=False)
+    season = Column(String, nullable=False)
+    effective_from = Column(String, nullable=False)
+    status = Column(String, default="ACTIVE")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 

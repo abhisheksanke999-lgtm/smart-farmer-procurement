@@ -50,13 +50,16 @@ function renderHeader() {
 
           ${user ? `
             <!-- Notification Bell Icon -->
-            <button onclick="toggleNotificationDrawer()" class="relative p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 transition text-white">
+            <button onclick="toggleNotificationDrawer()" class="relative p-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 transition text-white hover:scale-105 active:scale-95" title="Notifications">
               <i data-lucide="bell" class="w-5 h-5"></i>
               ${unread > 0 ? `
-                <span class="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-extrabold text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-emerald-800 shadow">
+                <span id="header-unread-badge" class="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-extrabold text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-emerald-800 shadow">
                   ${unread > 9 ? '9+' : unread}
                 </span>
-              ` : ''}
+              ` : `
+                <span id="header-unread-badge" class="hidden absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-extrabold text-[10px] w-5 h-5 rounded-full items-center justify-center border-2 border-emerald-800 shadow">
+                </span>
+              `}
             </button>
 
             <!-- User Avatar & Logout (Desktop) -->
@@ -94,9 +97,9 @@ function renderMobileBottomNav() {
     items = [
       { id: 'home', icon: 'home', label: i18n.t('nav_home') },
       { id: 'book_slot', icon: 'calendar-plus', label: i18n.t('nav_book_slot') },
-      { id: 'live_queue', icon: 'clock', label: i18n.t('nav_queue') },
+      { id: 'my_bookings', icon: 'ticket', label: 'Bookings' },
+      { id: 'center_status', icon: 'building-2', label: 'Centres' },
       { id: 'receipts', icon: 'receipt', label: i18n.t('nav_receipts') },
-      { id: 'payments', icon: 'credit-card', label: i18n.t('nav_payments') },
       { id: 'logout', icon: 'log-out', label: 'Logout', isLogout: true }
     ];
   } else if (user.role === 'DEALER') {
@@ -109,9 +112,10 @@ function renderMobileBottomNav() {
   } else if (user.role === 'ADMIN') {
     items = [
       { id: 'dashboard', icon: 'layout-dashboard', label: i18n.t('nav_dashboard') },
-      { id: 'approvals', icon: 'user-check', label: i18n.t('nav_approvals') },
+      { id: 'farmers', icon: 'users', label: 'Farmers' },
+      { id: 'approvals', icon: 'briefcase', label: 'Dealers' },
       { id: 'centres', icon: 'warehouse', label: i18n.t('nav_centres') },
-      { id: 'admin_payments', icon: 'banknote', label: i18n.t('nav_payments') },
+      { id: 'admin_payments', icon: 'banknote', label: 'DBT' },
       { id: 'logout', icon: 'log-out', label: 'Logout', isLogout: true }
     ];
   }

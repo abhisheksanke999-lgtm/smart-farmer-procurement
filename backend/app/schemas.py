@@ -13,6 +13,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     phone: str
     password: str
+    confirm_password: Optional[str] = None
     role: str = "FARMER"
     language_preference: str = "en"
     # Farmer specific fields
@@ -28,7 +29,17 @@ class UserRegister(BaseModel):
     government_id_number: Optional[str] = None
     license_number: Optional[str] = None
     assigned_centre_id: Optional[int] = None
+    category_id: Optional[int] = None
     address: Optional[str] = None
+
+class CategoryOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    status: str = "ACTIVE"
+
+    class Config:
+        from_attributes = True
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -49,8 +60,14 @@ class OTPResendRequest(BaseModel):
 # Dealer status change
 class DealerStatusUpdate(BaseModel):
     dealer_id: int
-    status: str # APPROVED, REJECTED, SUSPENDED
+    status: str # APPROVED, REJECTED, SUSPENDED, ACTIVE
     rejection_reason: Optional[str] = None
+
+# Farmer status change
+class FarmerStatusUpdate(BaseModel):
+    farmer_id: int
+    status: str # ACTIVE, INACTIVE, BLOCKED
+    reason: Optional[str] = None
 
 # Slot booking schema
 class SlotBookingCreate(BaseModel):
@@ -59,6 +76,7 @@ class SlotBookingCreate(BaseModel):
     crop_type: str
     expected_quantity_quintals: float
     dealer_id: Optional[int] = None
+    category_id: Optional[int] = None
 
 # Farmer Dealer Assignment schemas
 class FarmerDealerAssignmentCreate(BaseModel):
@@ -67,6 +85,7 @@ class FarmerDealerAssignmentCreate(BaseModel):
     dealer_id: int
     slot_id: int
     expected_quantity_quintals: float = 40.0
+    category_id: Optional[int] = None
 
 # QR Scan Request
 class QRScanRequest(BaseModel):
@@ -99,3 +118,35 @@ class ComplaintCreate(BaseModel):
 class ComplaintResponse(BaseModel):
     complaint_id: int
     response: str
+
+# MSP Rate schemas
+class MSPRateCreate(BaseModel):
+    crop_name: str
+    rate_per_quintal: float
+    season: str
+    effective_from: str
+    status: str = "ACTIVE"
+    notes: Optional[str] = None
+
+class MSPRateUpdate(BaseModel):
+    crop_name: Optional[str] = None
+    rate_per_quintal: Optional[float] = None
+    season: Optional[str] = None
+    effective_from: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+class MSPRateOut(BaseModel):
+    id: int
+    crop_name: str
+    rate_per_quintal: float
+    season: str
+    effective_from: str
+    status: str
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+

@@ -2,40 +2,69 @@
 
 let isRendering = false;
 let pendingRender = false;
+let renderDebounceTimer = null;
+let renderRAF = null;
+
+// Debounced render: batches rapid state changes into a single DOM update
+function scheduleRender() {
+  if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
+  if (renderRAF) cancelAnimationFrame(renderRAF);
+  renderDebounceTimer = setTimeout(() => {
+    renderRAF = requestAnimationFrame(() => {
+      renderApp();
+    });
+  }, 30);
+}
 
 document.addEventListener("DOMContentLoaded", async () => {
   // Listen to language changes
   document.addEventListener("languageChanged", () => {
-    renderApp();
+    scheduleRender();
   });
 
-  // Check initial user authentication session silently
-  try {
-    const user = await api.getCurrentUser();
-    state.currentUser = user;
-    if (user) {
-      try {
-        const notifs = await api.getNotifications();
-        state.notifications = notifs.notifications || [];
-        state.unreadNotificationsCount = notifs.unread_count || 0;
-      } catch (ne) {
-        console.warn("Could not fetch notifications:", ne);
-      }
-    }
-  } catch (e) {
-    state.currentUser = null;
+  // Subscribe state store to trigger debounced re-renders
+  state.subscribe(() => {
+    scheduleRender();
+  });
+
+  // 1. Immediately restore cached user session for 0ms instant display (never blank on refresh)
+  const cachedUser = (typeof api !== 'undefined' && api.getCachedUser) ? api.getCachedUser() : null;
+  if (cachedUser && api && api.token) {
+    state.currentUser = cachedUser;
   }
 
-  // Subscribe state store to trigger re-renders
-  state.subscribe(() => {
-    renderApp();
-  });
-
-  // Enforce route security based on auth and permitted role tabs
+  // 2. Enforce initial route based on hash or role
   enforceRouteSecurity();
 
-  // Initial Render
+  // 3. Render immediately so the user never sees a blank white screen
   await renderApp();
+
+  // 4. Background revalidation silently without freezing the screen
+  if (api && api.token) {
+    api.getCurrentUser().then(user => {
+      if (user) {
+        // Set user without triggering notify to avoid double render
+        state.currentUser = user;
+        api.getNotifications().then(notifs => {
+          state.notifications = notifs.notifications || [];
+          state.unreadNotificationsCount = notifs.unread_count || 0;
+          // Single batched render for both user + notifications
+          scheduleRender();
+          if (typeof updateNotificationBadgeUI === 'function') {
+            updateNotificationBadgeUI();
+          }
+        }).catch(() => {
+          scheduleRender();
+        });
+      } else {
+        state.setCurrentUser(null);
+      }
+    }).catch(err => {
+      console.warn("Background auth check error:", err);
+    });
+  } else {
+    state.setCurrentUser(null);
+  }
 });
 
 // Enforce strict route security on hash change and browser navigation
@@ -75,6 +104,8 @@ function navigateBack() {
   }
 }
 
+let lastRenderedLayout = null; // 'auth' | 'dashboard' — tracks if we need a full rebuild
+
 async function renderApp() {
   if (isRendering) {
     pendingRender = true;
@@ -89,11 +120,14 @@ async function renderApp() {
     const user = state.currentUser;
 
     if (!user) {
+      lastRenderedLayout = 'auth';
       appRoot.innerHTML = `
         ${renderHeader()}
-        <main class="max-w-md mx-auto p-4 my-8">
-          ${renderAuthModal()}
-        </main>
+        <div class="flex-1 flex items-center justify-center p-4 sm:p-6 md:p-8 w-full min-h-[calc(100vh-70px)]">
+          <main class="w-full ${authMode === 'register' && selectedRegisterRole === 'DEALER' ? 'max-w-xl' : 'max-w-lg'} my-auto transition-all duration-300">
+            ${renderAuthModal()}
+          </main>
+        </div>
       `;
       setTimeout(() => {
         const em = document.getElementById("login-email");
@@ -102,6 +136,38 @@ async function renderApp() {
         if (pw) pw.value = "";
       }, 50);
     } else {
+      // If switching from auth to dashboard layout, build the full shell first with a loading indicator
+      const mainEl = document.getElementById("app-main-content");
+      if (lastRenderedLayout !== 'dashboard' || !mainEl) {
+        lastRenderedLayout = 'dashboard';
+        appRoot.innerHTML = `
+          ${renderHeader()}
+          <main id="app-main-content" class="max-w-7xl mx-auto p-4 sm:p-6 mb-20 sm:mb-8">
+            <div class="flex items-center justify-center py-16">
+              <div class="text-center">
+                <div style="width:2.5rem;height:2.5rem;border:3px solid rgba(5,150,105,0.2);border-top-color:#059669;border-radius:50%;animation:app-spin 0.7s linear infinite;margin:0 auto 0.75rem;"></div>
+                <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Loading...</p>
+              </div>
+            </div>
+          </main>
+          ${renderMobileBottomNav()}
+          <div id="notification-drawer-container">
+            ${renderNotificationDrawer()}
+          </div>
+          <div id="qr-modal-container">
+            ${renderQRModal()}
+          </div>
+          <div id="receipt-modal-container">
+            ${renderReceiptModal()}
+          </div>
+        `;
+        // Initialize icons for the shell immediately
+        if (window.lucide) {
+          requestAnimationFrame(() => { try { lucide.createIcons(); } catch(e){} });
+        }
+      }
+
+      // Now render the view content asynchronously — update only the main content area
       let mainContent = '';
       if (user.role === 'FARMER') {
         mainContent = await renderFarmerView();
@@ -111,21 +177,47 @@ async function renderApp() {
         mainContent = await renderAdminView();
       }
 
-      appRoot.innerHTML = `
-        ${renderHeader()}
-        <main class="max-w-7xl mx-auto p-4 sm:p-6 mb-20 sm:mb-8">
-          ${mainContent}
-        </main>
-        ${renderMobileBottomNav()}
-        ${renderNotificationDrawer()}
-        ${renderQRModal()}
-        ${renderReceiptModal()}
-      `;
+      // Targeted update: only replace the main content, not the entire page
+      const targetEl = document.getElementById("app-main-content");
+      if (targetEl) {
+        targetEl.innerHTML = mainContent;
+      }
+
+      // Update peripheral areas (navbar badge, modals) without full rebuild
+      const headerEl = appRoot.querySelector('header');
+      if (headerEl) {
+        const newHeader = document.createElement('div');
+        newHeader.innerHTML = renderHeader();
+        const newHeaderContent = newHeader.querySelector('header');
+        if (newHeaderContent) {
+          headerEl.replaceWith(newHeaderContent);
+        }
+      }
+
+      // Update modals
+      const notifContainer = document.getElementById("notification-drawer-container");
+      if (notifContainer) notifContainer.innerHTML = renderNotificationDrawer();
+      const qrContainer = document.getElementById("qr-modal-container");
+      if (qrContainer) qrContainer.innerHTML = renderQRModal();
+      const receiptContainer = document.getElementById("receipt-modal-container");
+      if (receiptContainer) receiptContainer.innerHTML = renderReceiptModal();
+
+      // Update mobile nav (it's a fixed <nav> at the bottom)
+      const mobileNavs = appRoot.querySelectorAll('nav.fixed.bottom-0');
+      if (mobileNavs.length > 0 && typeof renderMobileBottomNav === 'function') {
+        const newNav = document.createElement('div');
+        newNav.innerHTML = renderMobileBottomNav();
+        if (newNav.firstElementChild) {
+          mobileNavs[0].replaceWith(newNav.firstElementChild);
+        }
+      }
     }
 
     // Re-initialize Lucide Icons & Theme UI
     if (window.lucide) {
-      lucide.createIcons();
+      requestAnimationFrame(() => {
+        try { lucide.createIcons(); } catch(e) {}
+      });
     }
     if (typeof themeManager !== 'undefined') {
       themeManager.updateToggleUI();
@@ -133,11 +225,29 @@ async function renderApp() {
     enhancePasswordFields();
   } catch (err) {
     console.error("renderApp error:", err);
+    const appRoot = document.getElementById("app");
+    if (appRoot && (!appRoot.innerHTML || !appRoot.innerHTML.trim() || appRoot.querySelector('#app-loader'))) {
+      appRoot.innerHTML = `
+        ${typeof renderHeader === 'function' ? renderHeader() : ''}
+        <div class="max-w-md mx-auto p-6 mt-12 text-center glass-card">
+          <div class="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 flex items-center justify-center mx-auto mb-3 text-xl font-bold">🌾</div>
+          <h3 class="font-bold text-lg text-slate-900 dark:text-white mb-1">Procurement Portal Ready</h3>
+          <p class="text-xs text-slate-500 mb-4">Click below to load your dashboard.</p>
+          <button onclick="state.setActiveTab('home'); renderApp();" class="btn-agri text-xs px-5 py-2.5 mx-auto">
+            Open Dashboard
+          </button>
+        </div>
+      `;
+      if (window.lucide) {
+        try { lucide.createIcons(); } catch (le) {}
+      }
+    }
   } finally {
     isRendering = false;
     if (pendingRender) {
       pendingRender = false;
-      renderApp();
+      // Use scheduleRender instead of direct call to prevent stack overflow
+      scheduleRender();
     }
   }
 }
@@ -192,6 +302,8 @@ function escapeHtml(str) {
 
 let registrationCentres = [];
 let loadingRegistrationCentres = false;
+let registrationCategories = [];
+let loadingRegistrationCategories = false;
 
 async function loadRegistrationCentres() {
   if (registrationCentres.length > 0 || loadingRegistrationCentres) return;
@@ -206,13 +318,29 @@ async function loadRegistrationCentres() {
   }
 }
 
+async function loadRegistrationCategories() {
+  if (registrationCategories.length > 0 || loadingRegistrationCategories) return;
+  loadingRegistrationCategories = true;
+  try {
+    registrationCategories = await api.getCategories();
+  } catch (err) {
+    console.error("Failed to load categories for registration:", err);
+  } finally {
+    loadingRegistrationCategories = false;
+    renderApp();
+  }
+}
+
 function toggleAuthMode(mode) {
   authMode = mode;
   otpVerificationState.active = false;
   if (otpVerificationState.timerInterval) clearInterval(otpVerificationState.timerInterval);
   if (otpVerificationState.cooldownInterval) clearInterval(otpVerificationState.cooldownInterval);
-  if (mode === 'register' && selectedRegisterRole === 'DEALER' && registrationCentres.length === 0) {
-    loadRegistrationCentres();
+  if (mode === 'register') {
+    if (registrationCategories.length === 0) loadRegistrationCategories();
+    if (selectedRegisterRole === 'DEALER' && registrationCentres.length === 0) {
+      loadRegistrationCentres();
+    }
   }
   renderApp();
   setTimeout(() => {
@@ -225,8 +353,9 @@ function toggleAuthMode(mode) {
 
 function selectRegisterRole(role) {
   selectedRegisterRole = role;
-  if (role === 'DEALER' && registrationCentres.length === 0) {
-    loadRegistrationCentres();
+  if (role === 'DEALER') {
+    if (registrationCentres.length === 0) loadRegistrationCentres();
+    if (registrationCategories.length === 0) loadRegistrationCategories();
   }
   renderApp();
 }
@@ -419,67 +548,66 @@ function renderOtpVerificationCard() {
   const isLocked = otpVerificationState.attemptsLeft <= 0;
 
   return `
-    <div class="glass-card p-6 sm:p-8 shadow-2xl border-t-4 border-emerald-600 animate-fade-in relative overflow-hidden">
+    <div class="glass-card auth-highlight-card p-6 sm:p-9 shadow-2xl rounded-3xl animate-fade-in relative overflow-hidden">
       
       <!-- Top Decorative Glow -->
-      <div class="absolute -right-8 -top-8 w-24 h-24 bg-emerald-500/10 rounded-full blur-xl pointer-events-none"></div>
+      <div class="absolute -right-8 -top-8 w-28 h-28 bg-emerald-500/15 rounded-full blur-xl pointer-events-none"></div>
 
       <!-- Icon & Header -->
-      <div class="text-center mb-5">
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-2xl mx-auto mb-3 shadow-lg shadow-emerald-500/25">
-          <i data-lucide="shield-check" class="w-8 h-8"></i>
+      <div class="text-center mb-6">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center font-bold text-3xl mx-auto mb-3 shadow-lg shadow-emerald-500/25 ring-4 ring-emerald-500/20">
+          <i data-lucide="shield-check" class="w-9 h-9"></i>
         </div>
-        <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">
+        <h2 class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
           ${i18n.t("otp_verification_title")}
         </h2>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+        <p class="text-sm sm:text-base text-slate-600 dark:text-slate-300 font-medium mt-1.5">
           ${i18n.t("otp_sent_to")}
         </p>
 
         <!-- Recipient Email Pill -->
-        <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 rounded-full text-emerald-800 dark:text-emerald-300 font-semibold text-xs mt-3 shadow-sm">
-          <i data-lucide="mail" class="w-3.5 h-3.5"></i>
+        <div class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-full text-emerald-800 dark:text-emerald-300 font-bold text-sm sm:text-base mt-3 shadow-sm">
+          <i data-lucide="mail" class="w-4 h-4"></i>
           <span class="font-mono">${escapeHtml(otpVerificationState.email)}</span>
         </div>
       </div>
 
       <!-- Timer & Attempts Status Bar -->
-      <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 mb-4 text-xs font-semibold">
-        <div class="flex items-center gap-1.5">
+      <div class="flex items-center justify-between p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 mb-5 text-sm font-semibold">
+        <div class="flex items-center gap-2">
           <i data-lucide="clock" class="w-4 h-4 text-emerald-600 dark:text-emerald-400 ${!isExpired ? 'animate-pulse' : ''}"></i>
-          <span class="text-slate-600 dark:text-slate-300">${i18n.t("otp_expires_in")}:</span>
-          <span id="otp-timer-display" class="font-mono text-sm font-extrabold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'}">
+          <span class="text-slate-700 dark:text-slate-300">${i18n.t("otp_expires_in")}:</span>
+          <span id="otp-timer-display" class="font-mono text-base font-black ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'}">
             ${formatTimer(otpVerificationState.secondsLeft)}
           </span>
         </div>
-        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${otpVerificationState.attemptsLeft <= 2 ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300' : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700/80 dark:text-slate-200'} text-[11px] font-bold">
-          <i data-lucide="shield-alert" class="w-3 h-3"></i>
+        <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl ${otpVerificationState.attemptsLeft <= 2 ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300' : 'bg-slate-200/80 text-slate-700 dark:bg-slate-700/80 dark:text-slate-200'} text-xs font-bold">
+          <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
           <span>${otpVerificationState.attemptsLeft} ${i18n.t("otp_attempts_left")}</span>
         </div>
       </div>
 
-
       <!-- Error Message Banner -->
       ${otpVerificationState.errorMessage ? `
-        <div class="p-3 mb-4 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs flex items-start gap-2 shadow-sm">
+        <div class="p-3.5 mb-4 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-sm flex items-start gap-2 shadow-sm font-semibold">
           <i data-lucide="alert-circle" class="w-4 h-4 mt-0.5 shrink-0 text-rose-600 dark:text-rose-400"></i>
-          <div class="flex-1 font-medium">${escapeHtml(otpVerificationState.errorMessage)}</div>
+          <div class="flex-1">${escapeHtml(otpVerificationState.errorMessage)}</div>
         </div>
       ` : ''}
 
       <!-- Success Message Banner -->
       ${otpVerificationState.successMessage ? `
-        <div class="p-3 mb-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2 shadow-sm">
+        <div class="p-3.5 mb-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-sm flex items-center gap-2 shadow-sm font-semibold">
           <i data-lucide="check-circle-2" class="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400"></i>
-          <div class="flex-1 font-medium">${escapeHtml(otpVerificationState.successMessage)}</div>
+          <div class="flex-1">${escapeHtml(otpVerificationState.successMessage)}</div>
         </div>
       ` : ''}
 
       <!-- 6-Digit OTP Input Form -->
-      <form onsubmit="handleOtpSubmitForm(event)" class="space-y-4">
+      <form onsubmit="handleOtpSubmitForm(event)" class="space-y-5">
         <div>
-          <label class="block text-center font-bold text-slate-700 dark:text-slate-300 mb-2 text-xs uppercase tracking-wider">
-            ${i18n.t("otp_enter_code")}
+          <label class="block text-center font-extrabold text-slate-800 dark:text-slate-200 mb-2 text-sm sm:text-base uppercase tracking-wider">
+            ${i18n.t("otp_enter_code")} <span class="text-rose-600 font-bold" title="Required">*</span>
           </label>
           <div class="flex justify-center">
             <input type="text"
@@ -492,10 +620,10 @@ function renderOtpVerificationCard() {
                    value="${otpVerificationState.enteredOtp || ''}"
                    oninput="handleOtpInput(this)"
                    ${isExpired || isLocked ? 'disabled' : ''}
-                   class="w-64 text-center text-3xl font-mono font-black tracking-[0.4em] px-4 py-3 rounded-2xl border-2 border-emerald-500/60 dark:border-emerald-500/80 bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-inner focus:outline-none focus:ring-4 focus:ring-emerald-500/25 transition disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800">
+                   class="w-72 text-center text-3xl sm:text-4xl font-mono font-black tracking-[0.4em] px-4 py-3.5 rounded-2xl border-2 border-emerald-500 dark:border-emerald-400 bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-inner focus:outline-none focus:ring-4 focus:ring-emerald-500/25 transition disabled:opacity-50 disabled:bg-slate-100 dark:disabled:bg-slate-800">
           </div>
-          <p class="text-center text-[11px] text-slate-400 mt-2">
-            Enter the exact 6 digits from the verification email
+          <p class="text-center text-xs text-slate-500 dark:text-slate-400 mt-2 font-medium">
+            Enter the exact 6 digits sent to your email
           </p>
         </div>
 
@@ -503,32 +631,32 @@ function renderOtpVerificationCard() {
         <button type="submit"
                 id="btn-verify-otp"
                 ${otpVerificationState.isVerifying || isExpired || isLocked ? 'disabled' : ''}
-                class="btn-agri w-full py-3.5 text-sm font-bold shadow-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                class="btn-agri w-full py-4 text-base sm:text-lg font-black shadow-xl flex items-center justify-center gap-2 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition">
           ${otpVerificationState.isVerifying ? `
-            <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            <div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             <span>Verifying OTP...</span>
           ` : `
-            <i data-lucide="check" class="w-4 h-4"></i>
+            <i data-lucide="check" class="w-5 h-5"></i>
             <span>${i18n.t("otp_verify_btn")}</span>
           `}
         </button>
       </form>
 
       <!-- Bottom Actions: Resend & Cancel -->
-      <div class="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800/80 flex flex-col items-center gap-3 text-xs">
+      <div class="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800/80 flex flex-col items-center gap-3 text-sm">
         <button type="button"
                 id="btn-resend-otp"
                 onclick="handleResendOtp()"
                 ${otpVerificationState.isResending || otpVerificationState.resendCooldown > 0 ? 'disabled' : ''}
-                class="text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 font-bold flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition px-3 py-1.5 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/40">
-          <i data-lucide="rotate-cw" class="w-3.5 h-3.5 ${otpVerificationState.isResending ? 'animate-spin' : ''}"></i>
+                class="text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 font-bold flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition px-4 py-2 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-950/40">
+          <i data-lucide="rotate-cw" class="w-4 h-4 ${otpVerificationState.isResending ? 'animate-spin' : ''}"></i>
           <span>${otpVerificationState.resendCooldown > 0 ? `${i18n.t("otp_resend_wait")} (${otpVerificationState.resendCooldown}s)` : i18n.t("otp_resend_btn")}</span>
         </button>
 
         <button type="button"
                 onclick="cancelOtpVerification()"
-                class="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-xs font-semibold flex items-center gap-1 transition">
-          <i data-lucide="arrow-left" class="w-3 h-3"></i>
+                class="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-sm font-bold flex items-center gap-1.5 transition">
+          <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>
           <span>${i18n.t("otp_change_email")}</span>
         </button>
       </div>
@@ -545,156 +673,367 @@ function renderAuthModal() {
   const lang = i18n.currentLang;
 
   return `
-    <div class="glass-card p-6 sm:p-8 shadow-2xl border-t-4 border-emerald-600 animate-fade-in">
+    <div class="glass-card auth-highlight-card p-6 sm:p-8 shadow-2xl rounded-3xl animate-fade-in relative">
       
       <!-- Logo & Title -->
-      <div class="text-center mb-6">
-        <div class="w-14 h-14 rounded-2xl agri-gradient text-white flex items-center justify-center font-bold text-3xl mx-auto mb-3 shadow-lg">
+      <div class="text-center mb-5">
+        <div class="w-14 h-14 rounded-2xl agri-gradient text-white flex items-center justify-center font-bold text-2xl mx-auto mb-2.5 shadow-lg ring-4 ring-emerald-500/20">
           🌾
         </div>
-        <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">
+        <h2 class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
           ${i18n.t("app_title")}
         </h2>
-        <p class="text-xs text-slate-500 mt-1">${i18n.t("app_subtitle")}</p>
+        <p class="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium mt-1">${i18n.t("app_subtitle")}</p>
       </div>
 
       <!-- Login / Register Tab Toggle -->
-      <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 mb-6 font-bold text-xs">
-        <button onclick="toggleAuthMode('login')" class="flex-1 py-2 rounded-lg ${authMode === 'login' ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-400 shadow' : 'text-slate-500'} transition">
+      <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800/90 p-1 mb-5 font-bold text-sm border border-slate-200 dark:border-slate-700">
+        <button onclick="toggleAuthMode('login')" class="tab-toggle-btn flex-1 py-2.5 px-3 rounded-lg ${authMode === 'login' ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-300 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 font-extrabold' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-semibold'} transition text-sm">
           Sign In
         </button>
-        <button onclick="toggleAuthMode('register')" class="flex-1 py-2 rounded-lg ${authMode === 'register' ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-400 shadow' : 'text-slate-500'} transition">
+        <button onclick="toggleAuthMode('register')" class="tab-toggle-btn flex-1 py-2.5 px-3 rounded-lg ${authMode === 'register' ? 'bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-300 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 font-extrabold' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-semibold'} transition text-sm">
           New Registration
         </button>
       </div>
 
       ${authMode === 'login' ? `
         <!-- LOGIN FORM -->
-        <form id="auth-login-form" onsubmit="handleAuthLoginSubmit(event)" class="space-y-4 text-xs" autocomplete="off">
+        <form id="auth-login-form" onsubmit="handleAuthLoginSubmit(event)" class="space-y-4" autocomplete="off">
           
           <!-- Role Selection: ADMIN, FARMER, DEALER -->
           <div>
-            <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">Select Role:</label>
-            <div class="grid grid-cols-3 gap-2 font-bold text-xs">
-              <button type="button" id="role-btn-admin" onclick="selectLoginRole('ADMIN')" class="p-2.5 rounded-xl border-2 transition ${selectedLoginRole === 'ADMIN' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'}">
+            <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1.5 text-sm sm:text-base">
+              Select Role: <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+            </label>
+            <div class="grid grid-cols-3 gap-2.5 font-bold text-sm">
+              <button type="button" id="role-btn-admin" onclick="selectLoginRole('ADMIN')" class="role-toggle-btn py-2.5 px-2 rounded-xl border-2 transition ${selectedLoginRole === 'ADMIN' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm ring-2 ring-emerald-500/20 font-black' : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 font-bold'} flex items-center justify-center gap-1.5">
                 🏛️ Admin
               </button>
-              <button type="button" id="role-btn-farmer" onclick="selectLoginRole('FARMER')" class="p-2.5 rounded-xl border-2 transition ${selectedLoginRole === 'FARMER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'}">
+              <button type="button" id="role-btn-farmer" onclick="selectLoginRole('FARMER')" class="role-toggle-btn py-2.5 px-2 rounded-xl border-2 transition ${selectedLoginRole === 'FARMER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm ring-2 ring-emerald-500/20 font-black' : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 font-bold'} flex items-center justify-center gap-1.5">
                 🌾 Farmer
               </button>
-              <button type="button" id="role-btn-dealer" onclick="selectLoginRole('DEALER')" class="p-2.5 rounded-xl border-2 transition ${selectedLoginRole === 'DEALER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'}">
+              <button type="button" id="role-btn-dealer" onclick="selectLoginRole('DEALER')" class="role-toggle-btn py-2.5 px-2 rounded-xl border-2 transition ${selectedLoginRole === 'DEALER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm ring-2 ring-emerald-500/20 font-black' : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 font-bold'} flex items-center justify-center gap-1.5">
                 🏢 Dealer
               </button>
             </div>
           </div>
 
           <div>
-            <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
-            <input type="email" id="login-email" name="login_email" placeholder="Enter your registered email" value="" required autocomplete="off" class="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1.5 text-sm sm:text-base">
+              Email Address <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+            </label>
+            <input type="email" id="login-email" name="login_email" placeholder="Enter your registered email" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 sm:py-3 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm sm:text-base font-medium focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
 
           <div>
-            <div class="flex items-center justify-between mb-1">
-              <label class="block font-bold text-slate-700 dark:text-slate-300">Password</label>
-              <button type="button" onclick="handleForgotPassword()" class="text-[11px] text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-semibold transition">Forgot Password?</button>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block font-bold text-slate-800 dark:text-slate-200 text-sm sm:text-base mb-0">
+                Password <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+              </label>
+              <button type="button" onclick="handleForgotPassword()" class="text-xs sm:text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-bold transition">Forgot Password?</button>
             </div>
             <div class="relative flex items-center">
-              <input type="password" id="login-password" name="login_password" placeholder="Enter your password" value="" required autocomplete="new-password" class="w-full pl-4 pr-11 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-emerald-500 outline-none transition">
-              <button type="button" id="toggle-login-password" onclick="togglePasswordVisibility('login-password', 'toggle-login-password')" aria-label="Show password" title="Show password" class="password-toggle-btn absolute right-2.5 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition focus:outline-none flex items-center justify-center rounded-lg">
+              <input type="password" id="login-password" name="login_password" placeholder="Enter your password" value="" required autocomplete="new-password" class="w-full pl-3.5 pr-11 py-2.5 sm:py-3 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm sm:text-base font-medium focus:ring-2 focus:ring-emerald-500 outline-none transition">
+              <button type="button" id="toggle-login-password" onclick="togglePasswordVisibility('login-password', 'toggle-login-password')" aria-label="Show password" title="Show password" class="password-toggle-btn absolute right-2.5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition focus:outline-none flex items-center justify-center rounded-lg">
                 <i data-lucide="eye" class="w-4 h-4"></i>
               </button>
             </div>
           </div>
 
-          <button id="btn-login-submit" type="submit" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
+          <button id="btn-login-submit" type="submit" class="btn-agri w-full py-3 sm:py-3.5 text-base font-extrabold shadow-lg rounded-xl tracking-wide mt-2">
             Secure Login as ${selectedLoginRole}
           </button>
         </form>
       ` : `
         <!-- REGISTER FORM -->
-        <form onsubmit="handleAuthRegisterSubmit(event)" class="space-y-4 text-xs" autocomplete="off">
+        <form onsubmit="handleAuthRegisterSubmit(event)" class="space-y-4" autocomplete="off">
           
           <!-- Role Selection Pills -->
           <div>
-            <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Registering As:</label>
-            <div class="grid grid-cols-2 gap-2 font-bold text-xs">
-              <button type="button" onclick="selectRegisterRole('FARMER')" class="p-2.5 rounded-xl border-2 ${selectedRegisterRole === 'FARMER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-slate-200 dark:border-slate-700'}">
+            <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1.5 text-sm sm:text-base">
+              Registering As: <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+            </label>
+            <div class="grid grid-cols-2 gap-2.5 font-bold text-sm">
+              <button type="button" onclick="selectRegisterRole('FARMER')" class="role-toggle-btn py-2.5 px-3 rounded-xl border-2 transition text-sm ${selectedRegisterRole === 'FARMER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm ring-2 ring-emerald-500/20 font-black' : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold'}">
                 🌾 Farmer
               </button>
-              <button type="button" onclick="selectRegisterRole('DEALER')" class="p-2.5 rounded-xl border-2 ${selectedRegisterRole === 'DEALER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-slate-200 dark:border-slate-700'}">
+              <button type="button" onclick="selectRegisterRole('DEALER')" class="role-toggle-btn py-2.5 px-3 rounded-xl border-2 transition text-sm ${selectedRegisterRole === 'DEALER' ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 shadow-sm ring-2 ring-emerald-500/20 font-black' : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold'}">
                 🏢 Procurement Dealer
               </button>
             </div>
           </div>
 
           <div>
-            <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Full Name</label>
-            <input type="text" id="reg-name" placeholder="Enter Full Name" value="" required autocomplete="off" class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
+            <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1.5 text-sm sm:text-base">
+              Full Name <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+            </label>
+            <input type="text" id="reg-name" placeholder="Enter Full Name" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 sm:py-3 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm sm:text-base font-medium focus:ring-2 focus:ring-emerald-500 outline-none">
           </div>
 
-          <div class="grid grid-cols-2 gap-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email</label>
-              <input type="email" id="reg-email" placeholder="Enter your email address" value="" required autocomplete="off" class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
+              <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1.5 text-sm sm:text-base">
+                Email Address <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+              </label>
+              <input type="email" id="reg-email" placeholder="Enter email address" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 sm:py-3 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm sm:text-base font-medium focus:ring-2 focus:ring-emerald-500 outline-none">
             </div>
             <div>
-              <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Mobile No</label>
-              <input type="tel" id="reg-phone" placeholder="9876543210" value="" required autocomplete="off" class="w-full px-4 py-2 rounded-xl border dark:bg-slate-800">
+              <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1.5 text-sm sm:text-base">
+                Mobile Number <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+              </label>
+              <input type="tel" id="reg-phone" placeholder="9876543210" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 sm:py-3 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm sm:text-base font-medium focus:ring-2 focus:ring-emerald-500 outline-none">
             </div>
           </div>
 
-          <div>
-            <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">Password</label>
-            <div class="relative flex items-center">
-              <input type="password" id="reg-password" placeholder="Create Secure Password (min 6 chars)" value="" minlength="6" required autocomplete="off" class="w-full pl-4 pr-11 py-2 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-2 focus:ring-emerald-500 outline-none transition">
-              <button type="button" id="toggle-reg-password" onclick="togglePasswordVisibility('reg-password', 'toggle-reg-password')" aria-label="Show password" title="Show password" class="password-toggle-btn absolute right-2.5 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition focus:outline-none flex items-center justify-center rounded-lg">
-                <i data-lucide="eye" class="w-4 h-4"></i>
-              </button>
+          <div class="space-y-3.5">
+            <div>
+              <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1.5 text-sm sm:text-base">
+                Create Password <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+              </label>
+              <div class="relative flex items-center">
+                <input type="password" id="reg-password" placeholder="e.g. Farmer@123" value="" minlength="8" required autocomplete="off" oninput="handlePasswordInputUpdate()" class="w-full pl-3.5 pr-11 py-2.5 sm:py-3 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm sm:text-base font-medium focus:ring-2 focus:ring-emerald-500 outline-none transition">
+                <button type="button" id="toggle-reg-password" onclick="togglePasswordVisibility('reg-password', 'toggle-reg-password')" aria-label="Show password" title="Show password" class="password-toggle-btn absolute right-2.5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition focus:outline-none flex items-center justify-center rounded-lg">
+                  <i data-lucide="eye" class="w-4 h-4"></i>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1.5 text-sm sm:text-base">
+                Confirm Password <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+              </label>
+              <div class="relative flex items-center">
+                <input type="password" id="reg-confirm-password" placeholder="Re-enter password" value="" minlength="8" required autocomplete="off" oninput="handlePasswordInputUpdate()" class="w-full pl-3.5 pr-11 py-2.5 sm:py-3 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm sm:text-base font-medium focus:ring-2 focus:ring-emerald-500 outline-none transition">
+                <button type="button" id="toggle-reg-confirm-password" onclick="togglePasswordVisibility('reg-confirm-password', 'toggle-reg-confirm-password')" aria-label="Show password" title="Show password" class="password-toggle-btn absolute right-2.5 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition focus:outline-none flex items-center justify-center rounded-lg">
+                  <i data-lucide="eye" class="w-4 h-4"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Password Strength Bar (Hidden until password is typed) -->
+            <div id="password-strength-container" class="space-y-1 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 hidden">
+              <div class="flex justify-between items-center text-xs">
+                <span class="text-slate-600 dark:text-slate-400 font-semibold">Password Strength:</span>
+                <span id="password-strength-label" class="font-black text-xs text-slate-400 dark:text-slate-500">—</span>
+              </div>
+              <div class="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                <div id="password-strength-bar" class="h-full w-0 bg-transparent transition-all duration-300"></div>
+              </div>
+            </div>
+
+            <!-- Requirement Checklist -->
+            <div class="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 text-xs space-y-1.5 font-medium">
+              <div id="req-min-len" class="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                <i data-lucide="circle" class="w-3.5 h-3.5"></i> Minimum 8 characters
+              </div>
+              <div id="req-upper" class="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                <i data-lucide="circle" class="w-3.5 h-3.5"></i> At least 1 uppercase letter (A–Z)
+              </div>
+              <div id="req-lower" class="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                <i data-lucide="circle" class="w-3.5 h-3.5"></i> At least 1 lowercase letter (a–z)
+              </div>
+              <div id="req-num" class="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                <i data-lucide="circle" class="w-3.5 h-3.5"></i> At least 1 number (0–9)
+              </div>
+              <div id="req-special" class="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                <i data-lucide="circle" class="w-3.5 h-3.5"></i> At least 1 special character (@, #, $, %, etc.)
+              </div>
+              <div id="req-match" class="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                <i data-lucide="circle" class="w-3.5 h-3.5"></i> Passwords match
+              </div>
             </div>
           </div>
 
           ${selectedRegisterRole === 'DEALER' ? `
-            <div class="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 space-y-2.5">
-              <span class="font-extrabold text-amber-900 dark:text-amber-300 block text-xs">🏢 Dealer Business & Centre Details:</span>
+            <div class="p-3.5 sm:p-4 bg-amber-50/80 dark:bg-amber-950/40 rounded-2xl border-2 border-amber-300 dark:border-amber-800 space-y-3">
+              <span class="font-extrabold text-amber-950 dark:text-amber-200 block text-sm sm:text-base">🏢 Dealer Business &amp; Centre Details:</span>
               <div>
-                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">Business Name <span class="text-rose-600">*</span></label>
-                <input type="text" id="reg-biz-name" placeholder="Business Name (e.g. Sri Venkateswara Traders)" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900">
-              </div>
-              <div class="grid grid-cols-2 gap-2">
-                <div>
-                  <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">Trade License No <span class="text-rose-600">*</span></label>
-                  <input type="text" id="reg-license" placeholder="e.g. LIC-2026-901" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 font-mono">
-                </div>
-                <div>
-                  <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">GSTIN / ID <span class="text-rose-600">*</span></label>
-                  <input type="text" id="reg-gstin" placeholder="GSTIN Number" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900 uppercase font-mono">
-                </div>
+                <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
+                  Business Name <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+                </label>
+                <input type="text" id="reg-biz-name" placeholder="Business Name (e.g. Sri Venkateswara Traders)" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none">
               </div>
               <div>
-                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">Assigned Procurement Center <span class="text-rose-600 font-bold">* (Mandatory)</span></label>
-                <select id="reg-dealer-centre" required class="w-full px-3 py-2 rounded-lg border dark:bg-slate-900 font-semibold text-emerald-800 dark:text-emerald-300 text-xs">
+                <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
+                  Mandatory Product Category <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+                </label>
+                <select id="reg-dealer-category" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 font-bold text-emerald-800 dark:text-emerald-300 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                  <option value="">-- Select Product Category (Paddy, Cotton) --</option>
+                  ${registrationCategories.map(cat => `
+                    <option value="${cat.id}">${cat.name === 'Paddy' ? '🌾' : '☁️'} ${escapeHtml(cat.name)} - ${escapeHtml(cat.description || '')}</option>
+                  `).join('')}
+                </select>
+                ${registrationCategories.length === 0 ? `<p class="text-xs text-amber-600 mt-1">Loading product categories...</p>` : ''}
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
+                    Trade License No <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+                  </label>
+                  <input type="text" id="reg-license" placeholder="e.g. LIC-2026-901" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 font-mono font-bold text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                </div>
+                <div>
+                  <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
+                    GSTIN / ID <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+                  </label>
+                  <input type="text" id="reg-gstin" placeholder="GSTIN Number" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 uppercase font-mono font-bold text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+                </div>
+              </div>
+              <div>
+                <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
+                  Assigned Procurement Center <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+                </label>
+                <select id="reg-dealer-centre" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 font-bold text-emerald-800 dark:text-emerald-300 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
                   <option value="">-- Select Mandatory Procurement Center --</option>
                   ${registrationCentres.map(c => `
                     <option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.code)}) - ${escapeHtml(c.district || '')}</option>
                   `).join('')}
                 </select>
-                ${registrationCentres.length === 0 ? `<p class="text-[10px] text-amber-600 mt-1">Loading procurement centers...</p>` : ''}
+                ${registrationCentres.length === 0 ? `<p class="text-xs text-amber-600 mt-1">Loading procurement centers...</p>` : ''}
               </div>
               <div>
-                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-0.5">Business / Office Address <span class="text-rose-600 font-bold">*</span></label>
-                <input type="text" id="reg-dealer-address" placeholder="e.g. Shop #4, APMC Market Yard, Bhimavaram" value="" required autocomplete="off" class="w-full px-3 py-1.5 rounded-lg border dark:bg-slate-900">
+                <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
+                  Business / Office Address <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+                </label>
+                <input type="text" id="reg-dealer-address" placeholder="e.g. Shop #4, APMC Market Yard, Bhimavaram" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none">
               </div>
             </div>
           ` : ''}
 
-          <button type="submit" id="btn-submit-reg" class="btn-agri w-full py-3 text-sm font-bold shadow-xl">
-            Send Email OTP & Verify
+          <button type="submit" id="btn-submit-reg" disabled class="btn-agri w-full py-3 sm:py-3.5 text-base font-extrabold shadow-lg rounded-xl opacity-50 cursor-not-allowed transition mt-2">
+            Send Email OTP &amp; Verify
           </button>
         </form>
       `}
 
     </div>
   `;
+}
+
+function checkPasswordRules(pwd, confirmPwd) {
+  if (!pwd || pwd.length === 0) {
+    return {
+      hasMinLen: false,
+      hasUpper: false,
+      hasLower: false,
+      hasNum: false,
+      hasSpecial: false,
+      matches: false,
+      strength: "—",
+      color: "text-slate-400 dark:text-slate-500",
+      barColor: "bg-transparent",
+      barWidth: "0%",
+      allValid: false
+    };
+  }
+
+  const hasMinLen = pwd.length >= 8;
+  const hasUpper = /[A-Z]/.test(pwd);
+  const hasLower = /[a-z]/.test(pwd);
+  const hasNum = /[0-9]/.test(pwd);
+  const hasSpecial = /[^A-Za-z0-9]/.test(pwd);
+  const matches = !!confirmPwd && pwd === confirmPwd;
+
+  let score = 0;
+  if (hasMinLen) score++;
+  if (hasUpper) score++;
+  if (hasLower) score++;
+  if (hasNum) score++;
+  if (hasSpecial) score++;
+
+  let strength = "Weak";
+  let color = "text-rose-600 dark:text-rose-400";
+  let barColor = "bg-rose-500";
+  let barWidth = "20%";
+  if (score >= 5 && matches) {
+    strength = "Strong";
+    color = "text-emerald-600 dark:text-emerald-400";
+    barColor = "bg-emerald-500";
+    barWidth = "100%";
+  } else if (score >= 4) {
+    strength = "Medium";
+    color = "text-amber-600 dark:text-amber-400";
+    barColor = "bg-amber-500";
+    barWidth = "65%";
+  }
+
+  const allValid = hasMinLen && hasUpper && hasLower && hasNum && hasSpecial && matches;
+
+  return {
+    hasMinLen,
+    hasUpper,
+    hasLower,
+    hasNum,
+    hasSpecial,
+    matches,
+    strength,
+    color,
+    barColor,
+    barWidth,
+    allValid
+  };
+}
+
+function handlePasswordInputUpdate() {
+  const pwd = document.getElementById("reg-password")?.value || "";
+  const confirmPwd = document.getElementById("reg-confirm-password")?.value || "";
+  const info = checkPasswordRules(pwd, confirmPwd);
+
+  const strengthContainer = document.getElementById("password-strength-container");
+  if (strengthContainer) {
+    if (pwd.length > 0) {
+      strengthContainer.classList.remove("hidden");
+    } else {
+      strengthContainer.classList.add("hidden");
+    }
+  }
+
+  const reqLen = document.getElementById("req-min-len");
+  const reqUpper = document.getElementById("req-upper");
+  const reqLower = document.getElementById("req-lower");
+  const reqNum = document.getElementById("req-num");
+  const reqSpecial = document.getElementById("req-special");
+  const reqMatch = document.getElementById("req-match");
+  const strLabel = document.getElementById("password-strength-label");
+  const strBar = document.getElementById("password-strength-bar");
+  const submitBtn = document.getElementById("btn-submit-reg");
+
+  if (reqLen) updateChecklistItem(reqLen, info.hasMinLen, "Minimum 8 characters");
+  if (reqUpper) updateChecklistItem(reqUpper, info.hasUpper, "At least 1 uppercase letter (A–Z)");
+  if (reqLower) updateChecklistItem(reqLower, info.hasLower, "At least 1 lowercase letter (a–z)");
+  if (reqNum) updateChecklistItem(reqNum, info.hasNum, "At least 1 number (0–9)");
+  if (reqSpecial) updateChecklistItem(reqSpecial, info.hasSpecial, "At least 1 special character (@, #, $, %, etc.)");
+  if (reqMatch) updateChecklistItem(reqMatch, info.matches, "Passwords match");
+
+  if (strLabel) {
+    strLabel.innerText = info.strength;
+    strLabel.className = `font-black text-xs sm:text-sm ${info.color}`;
+  }
+  if (strBar) {
+    strBar.style.width = info.barWidth;
+    strBar.className = `h-full rounded-full transition-all duration-300 ${info.barColor}`;
+  }
+  if (submitBtn) {
+    if (info.allValid) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove("opacity-50", "cursor-not-allowed");
+    } else {
+      submitBtn.disabled = true;
+      submitBtn.classList.add("opacity-50", "cursor-not-allowed");
+    }
+  }
+}
+
+function updateChecklistItem(elem, isValid, text) {
+  elem.innerHTML = `
+    <span class="${isValid ? 'text-emerald-700 dark:text-emerald-400 font-bold' : 'text-slate-500 dark:text-slate-400 font-medium'} flex items-center gap-2 text-xs sm:text-sm">
+      <i data-lucide="${isValid ? 'check-circle-2' : 'circle'}" class="w-4 h-4 ${isValid ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}"></i>
+      ${text}
+    </span>
+  `;
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
 }
 
 async function handleAuthLoginSubmit(e) {
@@ -734,6 +1073,7 @@ async function handleAuthRegisterSubmit(e) {
   const email = document.getElementById("reg-email")?.value?.trim();
   const phone = document.getElementById("reg-phone")?.value?.trim();
   const password = document.getElementById("reg-password")?.value;
+  const confirmPassword = document.getElementById("reg-confirm-password")?.value;
 
   if (!name || name.length < 2) {
     alert("Full Name must be at least 2 characters.");
@@ -748,8 +1088,26 @@ async function handleAuthRegisterSubmit(e) {
     alert("Please enter a valid 10-digit mobile number.");
     return;
   }
-  if (!password || password.length < 6) {
-    alert("Password must be at least 6 characters in length.");
+
+  // Strong Password Checks
+  if (!password || password.length < 8) {
+    alert("Password must contain at least 8 characters");
+    return;
+  }
+  if (!/[A-Z]/.test(password)) {
+    alert("Password must contain at least one uppercase letter");
+    return;
+  }
+  if (!/[0-9]/.test(password)) {
+    alert("Password must contain at least one number");
+    return;
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    alert("Password must contain at least one special character");
+    return;
+  }
+  if (password !== confirmPassword) {
+    alert("Passwords do not match");
     return;
   }
 
@@ -758,6 +1116,7 @@ async function handleAuthRegisterSubmit(e) {
     email,
     phone: cleanPhone,
     password,
+    confirm_password: confirmPassword,
     role: selectedRegisterRole,
     language_preference: i18n.currentLang
   };
@@ -767,10 +1126,15 @@ async function handleAuthRegisterSubmit(e) {
     const license = document.getElementById("reg-license")?.value?.trim();
     const gstin = document.getElementById("reg-gstin")?.value?.trim();
     const centreId = document.getElementById("reg-dealer-centre")?.value;
+    const categoryId = document.getElementById("reg-dealer-category")?.value;
     const address = document.getElementById("reg-dealer-address")?.value?.trim();
 
     if (!centreId) {
       alert("Please select a mandatory Procurement Center for Dealer registration.");
+      return;
+    }
+    if (!categoryId) {
+      alert("Please select a mandatory Product Category for Dealer registration.");
       return;
     }
     if (!address || address.length < 2) {
@@ -783,6 +1147,7 @@ async function handleAuthRegisterSubmit(e) {
     data.government_id_number = gstin;
     data.government_id_type = "GSTIN";
     data.assigned_centre_id = parseInt(centreId, 10);
+    data.category_id = parseInt(categoryId, 10);
     data.address = address;
   }
 

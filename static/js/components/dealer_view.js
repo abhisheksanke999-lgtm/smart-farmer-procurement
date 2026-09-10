@@ -67,6 +67,10 @@ async function renderDealerView() {
               <span class="text-slate-400">License Number:</span>
               <span class="font-mono font-bold text-emerald-600">${dp.license_number || 'Registered'}</span>
             </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Authorized Category:</span>
+              <span class="font-bold text-emerald-700 dark:text-emerald-400">🌾 ${escapeHtml(dp.category_name || user.category_name || (dp.category_id === 2 ? 'Cotton' : 'Paddy'))}</span>
+            </div>
           </div>
 
           <div class="mt-6 flex justify-center items-center gap-3">
@@ -103,9 +107,14 @@ async function renderDealerView() {
       
       <div class="gold-gradient text-white p-6 rounded-2xl shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <span class="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-extrabold uppercase tracking-wider mb-2 inline-block">
-            Verified Procurement Dealer
-          </span>
+          <div class="flex flex-wrap items-center gap-2 mb-2">
+            <span class="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-extrabold uppercase tracking-wider inline-block">
+              Verified Procurement Dealer
+            </span>
+            <span class="px-3 py-1 bg-amber-400 text-slate-950 font-black rounded-full text-xs uppercase tracking-wider inline-flex items-center gap-1 shadow-sm">
+              🌾 ${escapeHtml(dp.category_name || user.category_name || (dp.category_id === 2 ? 'Cotton' : 'Paddy'))}
+            </span>
+          </div>
           <h2 class="text-2xl font-extrabold">${dp.business_name || user.business_name || user.name}</h2>
           <p class="text-xs text-amber-100 mt-1 font-medium">
             Assigned Procurement Centre: <strong class="underline font-bold">${escapeHtml(dp.assigned_centre_name || user.assigned_centre_name || 'Assigned Center')}</strong>

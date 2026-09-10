@@ -1,5 +1,11 @@
 function closeQRModal() {
-  state.setBookingForQR(null);
+  state.activeBookingForQR = null;
+  const c = document.getElementById("qr-modal-container");
+  if (c) {
+    c.innerHTML = '';
+  } else {
+    state.setBookingForQR(null);
+  }
 }
 
 function renderQRModal() {
@@ -22,7 +28,7 @@ function renderQRModal() {
   }, 100);
 
   return `
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in" onclick="if(event.target === this) closeQRModal()">
       <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-center relative overflow-hidden">
         
         <button onclick="closeQRModal()" class="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition">

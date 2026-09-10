@@ -21,6 +21,16 @@ class ApiClient {
       localStorage.setItem("access_token", token);
     } else {
       localStorage.removeItem("access_token");
+      localStorage.removeItem("sf_current_user");
+    }
+  }
+
+  getCachedUser() {
+    try {
+      const raw = localStorage.getItem("sf_current_user");
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
     }
   }
 
@@ -137,12 +147,18 @@ class ApiClient {
 
   async getCurrentUser() {
     if (!this.token) {
+      localStorage.removeItem("sf_current_user");
       return null;
     }
     try {
-      return await this.request("/auth/me");
+      const user = await this.request("/auth/me");
+      if (user) {
+        localStorage.setItem("sf_current_user", JSON.stringify(user));
+      }
+      return user;
     } catch (err) {
       this.setToken(null);
+      localStorage.removeItem("sf_current_user");
       return null;
     }
   }
@@ -158,8 +174,21 @@ class ApiClient {
     return await this.request("/auth/centres");
   }
 
-  async getDealersByCentre(centreId) {
-    return await this.request(`/farmer/dealers?centre_id=${centreId}`);
+  async getCategories() {
+    return await this.request("/auth/categories");
+  }
+
+  async getServerTime() {
+    return await this.request("/farmer/server-time");
+  }
+
+  async getDealersByCentre(centreId = null, crop = null, categoryId = null) {
+    let url = "/farmer/dealers?";
+    const params = [];
+    if (centreId) params.push(`centre_id=${encodeURIComponent(centreId)}`);
+    if (crop) params.push(`crop=${encodeURIComponent(crop)}`);
+    if (categoryId) params.push(`category_id=${encodeURIComponent(categoryId)}`);
+    return await this.request(url + params.join("&"));
   }
 
   async createFarmerDealerAssignment(data) {
@@ -216,6 +245,12 @@ class ApiClient {
     return await this.request("/farmer/payments");
   }
 
+  async getProcurementCentreStatus(centreId = null) {
+    let url = "/farmer/centre-status";
+    if (centreId) url += `?centre_id=${centreId}`;
+    return await this.request(url);
+  }
+
   // Dealer Endpoints
   async scanQRCode(bookingCode) {
     return await this.request("/dealer/scan-qr", {
@@ -260,11 +295,15 @@ class ApiClient {
     return await this.request(url);
   }
 
+  async getDealerDetails(dealerId) {
+    return await this.request(`/admin/dealers/${dealerId}/details`);
+  }
+
   async updateDealerStatus(dealerId, status, rejectionReason = null) {
     return await this.request("/admin/update-dealer-status", {
       method: "POST",
       body: JSON.stringify({
-        dealer_id: dealerId,
+        dealer_id: parseInt(dealerId, 10),
         status,
         rejection_reason: rejectionReason
       })
@@ -273,6 +312,35 @@ class ApiClient {
 
   async getFarmers() {
     return await this.request("/admin/farmers");
+  }
+
+  async getFarmerDetails(farmerId) {
+    return await this.request(`/admin/farmers/${farmerId}/details`);
+  }
+
+  async updateFarmerStatus(farmerId, status, reason = null) {
+    return await this.request("/admin/update-farmer-status", {
+      method: "POST",
+      body: JSON.stringify({
+        farmer_id: parseInt(farmerId, 10),
+        status,
+        reason
+      })
+    });
+  }
+
+  async getAdminCentres() {
+    return await this.request("/admin/centres");
+  }
+
+  async toggleCentreStatus(centreId) {
+    return await this.request(`/admin/centres/${centreId}/toggle-status`, {
+      method: "POST"
+    });
+  }
+
+  async getLiveActivity() {
+    return await this.request("/admin/live-activity");
   }
 
   async createCentre(data) {
@@ -294,6 +362,35 @@ class ApiClient {
 
   async getAuditLogs() {
     return await this.request("/admin/audit-logs");
+  }
+
+  // Analytics & MSP Rates Endpoints
+  async getAdminAnalytics() {
+    return await this.request("/admin/analytics");
+  }
+
+  async getMspRates() {
+    return await this.request("/admin/msp-rates");
+  }
+
+  async createMspRate(data) {
+    return await this.request("/admin/msp-rates", {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+  }
+
+  async updateMspRate(rateId, data) {
+    return await this.request(`/admin/msp-rates/${rateId}`, {
+      method: "PUT",
+      body: JSON.stringify(data)
+    });
+  }
+
+  async deleteMspRate(rateId) {
+    return await this.request(`/admin/msp-rates/${rateId}`, {
+      method: "DELETE"
+    });
   }
 
   // Notification Endpoints

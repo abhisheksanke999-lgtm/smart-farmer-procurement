@@ -2,18 +2,55 @@ let notificationDrawerOpen = false;
 
 function toggleNotificationDrawer() {
   notificationDrawerOpen = !notificationDrawerOpen;
-  renderApp();
+  const container = document.getElementById("notification-drawer-container");
+  if (container) {
+    container.innerHTML = renderNotificationDrawer();
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  } else {
+    renderApp();
+  }
+
+  // Refresh notifications asynchronously without blocking the UI
+  if (notificationDrawerOpen && state.currentUser) {
+    api.getNotifications().then(notifs => {
+      state.notifications = notifs.notifications || [];
+      state.unreadNotificationsCount = notifs.unread_count || 0;
+      const c = document.getElementById("notification-drawer-container");
+      if (c && notificationDrawerOpen) {
+        c.innerHTML = renderNotificationDrawer();
+        if (window.lucide) lucide.createIcons();
+      }
+      updateNotificationBadgeUI();
+    }).catch(err => console.warn("Background notification refresh:", err));
+  }
+}
+
+function updateNotificationBadgeUI() {
+  const badge = document.getElementById("header-unread-badge");
+  const unread = state.unreadNotificationsCount;
+  if (badge) {
+    if (unread > 0) {
+      badge.textContent = unread > 9 ? '9+' : unread;
+      badge.classList.remove("hidden");
+      badge.classList.add("flex");
+    } else {
+      badge.classList.remove("flex");
+      badge.classList.add("hidden");
+    }
+  }
 }
 
 function renderNotificationDrawer() {
   if (!notificationDrawerOpen) return '';
 
-  const notifs = state.notifications;
+  const notifs = state.notifications || [];
   const lang = i18n.currentLang;
 
   return `
-    <div class="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm transition-opacity">
-      <div class="w-full max-w-md bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col transform transition-transform duration-300">
+    <div class="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm transition-opacity" onclick="if(event.target === this) toggleNotificationDrawer()">
+      <div class="w-full max-w-md bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col transform transition-transform duration-200">
         
         <!-- Drawer Header -->
         <div class="p-4 agri-gradient text-white flex items-center justify-between shadow-md">
@@ -23,11 +60,11 @@ function renderNotificationDrawer() {
           </div>
           <div class="flex items-center gap-2">
             ${state.unreadNotificationsCount > 0 ? `
-              <button onclick="markAllNotificationsRead()" class="text-xs bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg border border-white/30 font-medium transition">
+              <button onclick="markAllNotificationsRead()" class="text-xs bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg border border-white/30 font-medium transition cursor-pointer">
                 Mark all read
               </button>
             ` : ''}
-            <button onclick="toggleNotificationDrawer()" class="p-1 rounded-lg hover:bg-white/20 text-white">
+            <button onclick="toggleNotificationDrawer()" class="p-1 rounded-lg hover:bg-white/20 text-white cursor-pointer" title="Close">
               <i data-lucide="x" class="w-5 h-5"></i>
             </button>
           </div>
@@ -41,20 +78,20 @@ function renderNotificationDrawer() {
               <p class="font-medium text-sm">No notifications found</p>
             </div>
           ` : notifs.map(n => `
-            <div class="p-3.5 rounded-xl border ${n.is_read ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800' : 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/80 shadow-sm'} transition">
+            <div class="p-3.5 rounded-xl border ${n.is_read ? 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800' : 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800/80 shadow-sm'} transition">
               <div class="flex items-start justify-between gap-2 mb-1">
                 <span class="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
-                  ${n.type}
+                  ${escapeHtml(n.type || 'NOTIFICATION')}
                 </span>
                 <span class="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-                  ${n.created_at}
+                  ${escapeHtml(n.created_at || '')}
                 </span>
               </div>
               <h4 class="font-bold text-sm text-slate-900 dark:text-slate-100 mb-0.5">
-                ${lang === 'te' ? (n.title_te || n.title) : n.title}
+                ${escapeHtml(lang === 'te' ? (n.title_te || n.title) : n.title)}
               </h4>
               <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                ${lang === 'te' ? (n.message_te || n.message) : n.message}
+                ${escapeHtml(lang === 'te' ? (n.message_te || n.message) : n.message)}
               </p>
             </div>
           `).join('')}
@@ -70,10 +107,22 @@ function renderNotificationDrawer() {
 
 async function markAllNotificationsRead() {
   try {
+    // Optimistically update locally in 0ms
+    state.unreadNotificationsCount = 0;
+    if (state.notifications) {
+      state.notifications.forEach(n => { n.is_read = true; });
+    }
+    const container = document.getElementById("notification-drawer-container");
+    if (container) {
+      container.innerHTML = renderNotificationDrawer();
+      if (window.lucide) lucide.createIcons();
+    }
+    updateNotificationBadgeUI();
+
+    // Call API in background
     await api.markAllNotificationsRead();
-    const updated = await api.getNotifications();
-    state.setNotifications(updated);
   } catch (e) {
-    console.error(e);
+    console.error("Failed to mark all notifications read:", e);
   }
 }
+

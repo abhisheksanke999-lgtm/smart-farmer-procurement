@@ -37,50 +37,123 @@
   <!-- Google Fonts: Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="preconnect" href="https://cdn.tailwindcss.com">
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap"
     rel="stylesheet">
 
+  <!-- Custom Styles (load early) -->
+  <link rel="stylesheet" href="/static/css/styles.css?v=21.0">
+
+  <!-- Inline Critical CSS for Loading State -->
+  <style>
+    /* Instant loading skeleton — prevents white flash */
+    #app-loader {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #app-loader .loader-header {
+      background: linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%);
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    #app-loader .loader-logo {
+      width: 2.5rem; height: 2.5rem;
+      border-radius: 0.75rem;
+      background: rgba(255,255,255,0.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem;
+    }
+    #app-loader .loader-title {
+      color: white; font-weight: 700; font-size: 1rem;
+    }
+    #app-loader .loader-body {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    #app-loader .loader-card {
+      text-align: center;
+      max-width: 20rem;
+    }
+    #app-loader .loader-spinner {
+      width: 3rem; height: 3rem;
+      border: 3px solid rgba(5,150,105,0.2);
+      border-top-color: #059669;
+      border-radius: 50%;
+      animation: app-spin 0.7s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    #app-loader .loader-text {
+      color: #64748b; font-size: 0.875rem; font-weight: 500;
+    }
+    @keyframes app-spin {
+      to { transform: rotate(360deg); }
+    }
+    html.dark #app-loader .loader-body { background-color: #090e1a; }
+    html.dark #app-loader .loader-text { color: #94a3b8; }
+    /* Hide loader once app is rendered */
+    #app:not(:empty) #app-loader { display: none !important; }
+  </style>
+
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- HTML5 QR Code Scanner -->
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <!-- HTML5 QR Code Scanner (defer - not needed at first paint) -->
+  <script src="https://unpkg.com/html5-qrcode" defer></script>
 
-  <!-- QRCode Canvas Generator -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- QRCode Canvas Generator (defer - not needed at first paint) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 
-  <!-- Canvas Confetti -->
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-
-  <!-- Custom Styles -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=5.1">
+  <!-- Canvas Confetti (defer - not needed at first paint) -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js" defer></script>
 </head>
 
 <body
   class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-full font-sans antialiased selection:bg-emerald-500 selection:text-white">
 
   <!-- Main Root Container -->
-  <div id="app" class="min-h-screen flex flex-col justify-between"></div>
+  <div id="app" class="min-h-screen flex flex-col">
+    <!-- Instant Loading Skeleton (removed automatically once JS renders content) -->
+    <div id="app-loader">
+      <div class="loader-header">
+        <div class="loader-logo">🌾</div>
+        <div class="loader-title">Smart Farmer Procurement</div>
+      </div>
+      <div class="loader-body">
+        <div class="loader-card">
+          <div class="loader-spinner"></div>
+          <div class="loader-text">Loading application...</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- JavaScript Modules -->
-  <script src="/static/js/theme.js?v=5.1"></script>
-  <script src="/static/js/i18n.js?v=5.1"></script>
-  <script src="/static/js/api.js?v=5.1"></script>
-  <script src="/static/js/state.js?v=5.1"></script>
+  <script src="/static/js/theme.js?v=34.0"></script>
+  <script src="/static/js/i18n.js?v=34.0"></script>
+  <script src="/static/js/api.js?v=34.0"></script>
+  <script src="/static/js/state.js?v=34.0"></script>
 
   <!-- UI Components -->
-  <script src="/static/js/components/navbar.js?v=5.0"></script>
-  <script src="/static/js/components/notifications.js?v=5.0"></script>
-  <script src="/static/js/components/qr_modal.js?v=5.0"></script>
-  <script src="/static/js/components/qr_scanner.js?v=5.0"></script>
-  <script src="/static/js/components/receipt_modal.js?v=5.0"></script>
-  <script src="/static/js/components/farmer_view.js?v=5.0"></script>
-  <script src="/static/js/components/dealer_view.js?v=5.0"></script>
-  <script src="/static/js/components/admin_view.js?v=5.0"></script>
+  <script src="/static/js/components/navbar.js?v=34.0"></script>
+  <script src="/static/js/components/notifications.js?v=34.0"></script>
+  <script src="/static/js/components/qr_modal.js?v=34.0"></script>
+  <script src="/static/js/components/qr_scanner.js?v=34.0"></script>
+  <script src="/static/js/components/receipt_modal.js?v=34.0"></script>
+  <script src="/static/js/components/farmer_view.js?v=34.0"></script>
+  <script src="/static/js/components/dealer_view.js?v=34.0"></script>
+  <script src="/static/js/components/admin_view.js?v=34.0"></script>
 
   <!-- Main App Script -->
-  <script src="/static/js/app.js?v=5.0"></script>
+  <script src="/static/js/app.js?v=34.0"></script>
 </body>
 
 </html>
