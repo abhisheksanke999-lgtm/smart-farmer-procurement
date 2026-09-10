@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from ..database import get_db
 from ..models import (
@@ -21,7 +21,12 @@ def get_farmer_dealer_assignments(status_filter: Optional[str] = None, current_u
     Returns complete relationship hierarchy for Admin visibility:
     Farmer -> Product -> Procurement Center -> Dealer with status and timestamps.
     """
-    query = db.query(FarmerDealerAssignment).order_by(FarmerDealerAssignment.created_at.desc())
+    query = db.query(FarmerDealerAssignment).options(
+        joinedload(FarmerDealerAssignment.farmer),
+        joinedload(FarmerDealerAssignment.dealer).joinedload(User.dealer_profile),
+        joinedload(FarmerDealerAssignment.centre),
+        joinedload(FarmerDealerAssignment.booking)
+    ).order_by(FarmerDealerAssignment.created_at.desc())
     if status_filter:
         query = query.filter(FarmerDealerAssignment.status == status_filter)
     assignments = query.all()
@@ -60,29 +65,39 @@ def get_farmer_dealer_assignments(status_filter: Optional[str] = None, current_u
 
 @router.get("/dashboard-stats")
 def get_admin_dashboard_stats(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
-    total_farmers = db.query(User).filter(User.role == UserRole.FARMER).count()
-    active_farmers = db.query(User).filter(User.role == UserRole.FARMER, User.is_email_verified == True).count()
+    # 1. Farmers
+    farmers = db.query(User.is_email_verified).filter(User.role == UserRole.FARMER).all()
+    total_farmers = len(farmers)
+    active_farmers = sum(1 for (verified,) in farmers if verified)
     inactive_farmers = total_farmers - active_farmers
 
-    total_dealers = db.query(DealerProfile).count()
-    approved_dealers = db.query(DealerProfile).filter(DealerProfile.status == DealerStatus.APPROVED).count()
-    pending_dealers = db.query(DealerProfile).filter(DealerProfile.status == DealerStatus.PENDING).count()
-    suspended_dealers = db.query(DealerProfile).filter(DealerProfile.status.in_([DealerStatus.SUSPENDED, DealerStatus.REJECTED])).count()
+    # 2. Dealers
+    dealers = db.query(DealerProfile.status).all()
+    total_dealers = len(dealers)
+    approved_dealers = sum(1 for (st,) in dealers if st == DealerStatus.APPROVED)
+    pending_dealers = sum(1 for (st,) in dealers if st == DealerStatus.PENDING)
+    suspended_dealers = sum(1 for (st,) in dealers if st in [DealerStatus.SUSPENDED, DealerStatus.REJECTED])
     inactive_dealers = total_dealers - approved_dealers
+
+    # 3. Centres
     active_centres = db.query(ProcurementCentre).filter(ProcurementCentre.is_active == True).count()
     
+    # 4. Bookings & Queue
     today_str = datetime.now().strftime("%Y-%m-%d")
-    today_bookings = db.query(Booking).join(Slot).filter(Slot.date == today_str).count()
-    
+    today_bookings = db.query(Booking).join(Slot, Booking.slot_id == Slot.id).filter(Slot.date == today_str).count()
     waiting_queue = db.query(QueueEntry).filter(QueueEntry.status == QueueStatus.WAITING).count()
     completed_procurement = db.query(Booking).filter(Booking.status == BookingStatus.PROCUREMENT_COMPLETED).count()
     
-    pending_payments_count = db.query(Payment).filter(Payment.status == PaymentStatus.PAYMENT_PENDING).count()
-    completed_payments_count = db.query(Payment).filter(Payment.status == PaymentStatus.PAYMENT_COMPLETED).count()
+    # 5. Payments
+    payments = db.query(Payment.status, Payment.amount).all()
+    pending_payments_count = sum(1 for (st, amt) in payments if st == PaymentStatus.PAYMENT_PENDING)
+    completed_payments_count = sum(1 for (st, amt) in payments if st == PaymentStatus.PAYMENT_COMPLETED)
+    pending_payments_value = sum(amt or 0.0 for (st, amt) in payments if st == PaymentStatus.PAYMENT_PENDING)
 
-    total_procurement_quantity = db.query(func.sum(ProcurementTransaction.actual_quantity_quintals)).scalar() or 0.0
-    total_procurement_value = db.query(func.sum(ProcurementTransaction.total_amount)).scalar() or 0.0
-    pending_payments_value = db.query(func.sum(Payment.amount)).filter(Payment.status == PaymentStatus.PAYMENT_PENDING).scalar() or 0.0
+    # 6. Transactions
+    txns = db.query(ProcurementTransaction.actual_quantity_quintals, ProcurementTransaction.total_amount).all()
+    total_procurement_quantity = sum(q or 0.0 for (q, a) in txns)
+    total_procurement_value = sum(a or 0.0 for (q, a) in txns)
 
     return {
         "total_farmers": total_farmers,
@@ -107,29 +122,34 @@ def get_admin_dashboard_stats(current_user: User = Depends(require_admin), db: S
 
 @router.get("/dealers")
 def list_dealers(status_filter: Optional[str] = None, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
-    query = db.query(DealerProfile).join(User).order_by(DealerProfile.id.asc())
+    query = db.query(DealerProfile).options(
+        joinedload(DealerProfile.user),
+        joinedload(DealerProfile.assigned_centre),
+        joinedload(DealerProfile.category)
+    ).order_by(DealerProfile.id.asc())
     if status_filter:
         query = query.filter(DealerProfile.status == status_filter)
     
     dealers = query.all()
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Bulk load all transactions once
+    all_txns = db.query(ProcurementTransaction).all()
+    txns_by_dealer = {}
+    for t in all_txns:
+        txns_by_dealer.setdefault(t.dealer_id, []).append(t)
 
     res = []
     for d in dealers:
         centre_name = d.assigned_centre.name if d.assigned_centre else "Unassigned"
+        dealer_txns = txns_by_dealer.get(d.user_id, [])
         
-        today_txns = db.query(ProcurementTransaction).filter(
-            ProcurementTransaction.dealer_id == d.user_id,
-            ProcurementTransaction.transaction_time >= today_start
-        ).all()
+        today_txns = [t for t in dealer_txns if t.transaction_time and t.transaction_time >= today_start]
         today_qty = sum(t.actual_quantity_quintals or 0.0 for t in today_txns)
         today_amt = sum(t.total_amount or 0.0 for t in today_txns)
 
-        all_txns = db.query(ProcurementTransaction).filter(
-            ProcurementTransaction.dealer_id == d.user_id
-        ).all()
-        total_qty = sum(t.actual_quantity_quintals or 0.0 for t in all_txns)
-        total_amt = sum(t.total_amount or 0.0 for t in all_txns)
+        total_qty = sum(t.actual_quantity_quintals or 0.0 for t in dealer_txns)
+        total_amt = sum(t.total_amount or 0.0 for t in dealer_txns)
 
         res.append({
             "dealer_id": d.id,
@@ -160,7 +180,7 @@ def list_dealers(status_filter: Optional[str] = None, current_user: User = Depen
             "today_count": len(today_txns),
             "total_quantity": round(total_qty, 2),
             "total_amount": round(total_amt, 2),
-            "completed_transactions_count": len(all_txns)
+            "completed_transactions_count": len(dealer_txns)
         })
     return res
 
@@ -306,15 +326,17 @@ def update_dealer_status(update_in: DealerStatusUpdate, current_user: User = Dep
 
 @router.get("/farmers")
 def list_farmers(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
-    farmers = db.query(User).filter(User.role == UserRole.FARMER).order_by(User.id.asc()).all()
+    farmers = db.query(User).options(joinedload(User.farmer_profile)).filter(User.role == UserRole.FARMER).order_by(User.id.asc()).all()
+    
+    # Bulk aggregate bookings count by farmer_id
+    booking_counts = dict(db.query(Booking.farmer_id, func.count(Booking.id)).group_by(Booking.farmer_id).all())
+    completed_counts = dict(db.query(Booking.farmer_id, func.count(Booking.id)).filter(Booking.status == BookingStatus.PROCUREMENT_COMPLETED).group_by(Booking.farmer_id).all())
+    
     res = []
     for u in farmers:
         fp = u.farmer_profile
-        bookings_count = db.query(Booking).filter(Booking.farmer_id == u.id).count()
-        completed_procurements = db.query(Booking).filter(
-            Booking.farmer_id == u.id,
-            Booking.status == BookingStatus.PROCUREMENT_COMPLETED
-        ).count()
+        bookings_count = booking_counts.get(u.id, 0)
+        completed_procurements = completed_counts.get(u.id, 0)
         
         status_label = "Active" if u.is_email_verified else "Inactive"
         
@@ -479,60 +501,68 @@ def list_admin_centres(current_user: User = Depends(require_admin), db: Session 
     today_str = datetime.now().strftime("%Y-%m-%d")
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
-    res = []
-    for c in centres:
-        # Assigned dealers
-        dealers = db.query(DealerProfile).filter(
-            DealerProfile.assigned_centre_id == c.id
-        ).all()
-        dealers_data = [
-            {
+    # 1. Bulk load dealers
+    all_dealers = db.query(DealerProfile).options(joinedload(DealerProfile.user)).all()
+    dealers_by_centre = {}
+    for d in all_dealers:
+        if d.assigned_centre_id:
+            dealers_by_centre.setdefault(d.assigned_centre_id, []).append({
                 "dealer_id": d.id,
                 "dealer_code": f"DLR-{d.id:03d}",
                 "name": d.user.name if d.user else "Dealer",
                 "business_name": d.business_name,
                 "mobile": d.mobile_number,
                 "status": d.status
-            }
-            for d in dealers
-        ]
-        
-        # Today's bookings count
-        today_bookings = db.query(Booking).join(Slot).filter(
-            Booking.centre_id == c.id,
-            Slot.date == today_str
-        ).count()
+            })
 
-        # Today's completed count
-        today_completed = db.query(ProcurementTransaction).filter(
-            ProcurementTransaction.centre_id == c.id,
-            ProcurementTransaction.transaction_time >= today_start
-        ).count()
+    # 2. Bulk load today's bookings count
+    today_bookings_map = dict(
+        db.query(Booking.centre_id, func.count(Booking.id))
+        .join(Slot, Booking.slot_id == Slot.id)
+        .filter(Slot.date == today_str)
+        .group_by(Booking.centre_id)
+        .all()
+    )
 
-        # Current queue count
-        queue_count = db.query(QueueEntry).filter(
-            QueueEntry.centre_id == c.id,
-            QueueEntry.status == QueueStatus.WAITING
-        ).count()
+    # 3. Bulk load today's completed transactions count
+    today_completed_map = dict(
+        db.query(ProcurementTransaction.centre_id, func.count(ProcurementTransaction.id))
+        .filter(ProcurementTransaction.transaction_time >= today_start)
+        .group_by(ProcurementTransaction.centre_id)
+        .all()
+    )
 
-        # In service entry
-        in_service_entry = db.query(QueueEntry).filter(
-            QueueEntry.centre_id == c.id,
-            QueueEntry.status == QueueStatus.IN_SERVICE
-        ).first()
+    # 4. Bulk load waiting queue entries
+    waiting_entries = db.query(QueueEntry).filter(QueueEntry.status == QueueStatus.WAITING).order_by(QueueEntry.position.asc()).all()
+    waiting_by_centre = {}
+    for q in waiting_entries:
+        waiting_by_centre.setdefault(q.centre_id, []).append(q)
 
-        # Waiting entries
-        waiting_entries = db.query(QueueEntry).filter(
-            QueueEntry.centre_id == c.id,
-            QueueEntry.status == QueueStatus.WAITING
-        ).order_by(QueueEntry.position.asc()).all()
+    # 5. Bulk load in-service queue entries
+    in_service_entries = db.query(QueueEntry).filter(QueueEntry.status == QueueStatus.IN_SERVICE).all()
+    in_service_by_centre = {q.centre_id: q for q in in_service_entries}
 
-        if in_service_entry:
-            curr_token = in_service_entry.token_number
-        elif waiting_entries:
-            curr_token = waiting_entries[0].token_number
+    # 6. Bulk load latest bookings for token fallback
+    latest_bookings = db.query(Booking).order_by(Booking.id.desc()).all()
+    latest_booking_by_centre = {}
+    for b in latest_bookings:
+        if b.centre_id not in latest_booking_by_centre:
+            latest_booking_by_centre[b.centre_id] = b
+
+    res = []
+    for c in centres:
+        dealers_data = dealers_by_centre.get(c.id, [])
+        today_bookings = today_bookings_map.get(c.id, 0)
+        today_completed = today_completed_map.get(c.id, 0)
+        c_waiting = waiting_by_centre.get(c.id, [])
+        c_in_service = in_service_by_centre.get(c.id)
+
+        if c_in_service:
+            curr_token = c_in_service.token_number
+        elif c_waiting:
+            curr_token = c_waiting[0].token_number
         else:
-            latest_b = db.query(Booking).filter(Booking.centre_id == c.id).order_by(Booking.id.desc()).first()
+            latest_b = latest_booking_by_centre.get(c.id)
             curr_token = latest_b.token_number if latest_b else "PDC-1001"
 
         res.append({
@@ -554,8 +584,8 @@ def list_admin_centres(current_user: User = Depends(require_admin), db: Session 
             "assigned_dealers_count": len(dealers_data),
             "today_bookings_count": today_bookings,
             "today_completed_count": today_completed,
-            "current_queue_count": queue_count,
-            "currently_processing_count": 1 if in_service_entry else (1 if waiting_entries else 0),
+            "current_queue_count": len(c_waiting),
+            "currently_processing_count": 1 if c_in_service else (1 if c_waiting else 0),
             "current_token": curr_token,
             "station": "Weighbridge Station #1",
             "created_at": c.created_at.strftime("%Y-%m-%d %H:%M") if hasattr(c, "created_at") and c.created_at else ""
@@ -565,39 +595,55 @@ def list_admin_centres(current_user: User = Depends(require_admin), db: Session 
 @router.get("/live-activity")
 def get_live_procurement_activity(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     centres = db.query(ProcurementCentre).all()
-    today_str = datetime.now().strftime("%Y-%m-%d")
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
+    # Bulk load approved dealers
+    dealers = db.query(DealerProfile).filter(DealerProfile.status == DealerStatus.APPROVED).all()
+    dealers_by_centre = {}
+    for d in dealers:
+        if d.assigned_centre_id:
+            dealers_by_centre.setdefault(d.assigned_centre_id, []).append(d.business_name)
+
+    # Bulk load in-service queue entries
+    in_service_entries = db.query(QueueEntry).filter(QueueEntry.status == QueueStatus.IN_SERVICE).all()
+    in_service_by_centre = {q.centre_id: q for q in in_service_entries}
+
+    # Bulk load waiting queue entries
+    waiting_entries = db.query(QueueEntry).filter(QueueEntry.status == QueueStatus.WAITING).order_by(QueueEntry.position.asc()).all()
+    waiting_by_centre = {}
+    for q in waiting_entries:
+        waiting_by_centre.setdefault(q.centre_id, []).append(q)
+
+    # Bulk load today's completed transactions count
+    today_completed_map = dict(
+        db.query(ProcurementTransaction.centre_id, func.count(ProcurementTransaction.id))
+        .filter(ProcurementTransaction.transaction_time >= today_start)
+        .group_by(ProcurementTransaction.centre_id)
+        .all()
+    )
+
+    # Bulk load latest bookings for token fallback
+    latest_bookings = db.query(Booking).order_by(Booking.id.desc()).all()
+    latest_booking_by_centre = {}
+    for b in latest_bookings:
+        if b.centre_id not in latest_booking_by_centre:
+            latest_booking_by_centre[b.centre_id] = b
+
     activity_list = []
     for c in centres:
-        in_service_entry = db.query(QueueEntry).filter(
-            QueueEntry.centre_id == c.id,
-            QueueEntry.status == QueueStatus.IN_SERVICE
-        ).first()
+        c_in_service = in_service_by_centre.get(c.id)
+        c_waiting = waiting_by_centre.get(c.id, [])
         
-        waiting_entries = db.query(QueueEntry).filter(
-            QueueEntry.centre_id == c.id,
-            QueueEntry.status == QueueStatus.WAITING
-        ).order_by(QueueEntry.position.asc()).all()
-        
-        if in_service_entry:
-            curr_token = in_service_entry.token_number
-        elif waiting_entries:
-            curr_token = waiting_entries[0].token_number
+        if c_in_service:
+            curr_token = c_in_service.token_number
+        elif c_waiting:
+            curr_token = c_waiting[0].token_number
         else:
-            latest_b = db.query(Booking).filter(Booking.centre_id == c.id).order_by(Booking.id.desc()).first()
+            latest_b = latest_booking_by_centre.get(c.id)
             curr_token = latest_b.token_number if latest_b else "PDC-1003"
             
-        completed_today = db.query(ProcurementTransaction).filter(
-            ProcurementTransaction.centre_id == c.id,
-            ProcurementTransaction.transaction_time >= today_start
-        ).count()
-        
-        dealers = db.query(DealerProfile).filter(
-            DealerProfile.assigned_centre_id == c.id,
-            DealerProfile.status == DealerStatus.APPROVED
-        ).all()
-        dealer_names = [d.business_name for d in dealers]
+        completed_today = today_completed_map.get(c.id, 0)
+        dealer_names = dealers_by_centre.get(c.id, [])
         
         activity_list.append({
             "centre_id": c.id,
@@ -607,8 +653,8 @@ def get_live_procurement_activity(current_user: User = Depends(require_admin), d
             "is_active": c.is_active,
             "status": "Active" if c.is_active else "Closed",
             "current_token": curr_token,
-            "currently_processing": 1 if in_service_entry else (1 if waiting_entries else 0),
-            "waiting": len(waiting_entries) if waiting_entries else 0,
+            "currently_processing": 1 if c_in_service else (1 if c_waiting else 0),
+            "waiting": len(c_waiting),
             "completed_today": completed_today,
             "station": "Weighbridge #1",
             "assigned_dealers": dealer_names if dealer_names else ["Unassigned Dealer"],
@@ -670,7 +716,10 @@ def create_procurement_centre(centre_in: ProcurementCentreCreate, current_user: 
 
 @router.get("/payments")
 def get_all_payments(status_filter: Optional[str] = None, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
-    query = db.query(Payment).join(ProcurementTransaction).join(User, Payment.farmer_id == User.id)
+    query = db.query(Payment).options(
+        joinedload(Payment.transaction).joinedload(ProcurementTransaction.booking),
+        joinedload(Payment.farmer).joinedload(User.farmer_profile)
+    )
     if status_filter:
         query = query.filter(Payment.status == status_filter)
     
@@ -678,7 +727,7 @@ def get_all_payments(status_filter: Optional[str] = None, current_user: User = D
     res = []
     for p in payments:
         txn = p.transaction
-        farmer = db.query(User).filter(User.id == p.farmer_id).first()
+        farmer = p.farmer
         res.append({
             "payment_id": p.id,
             "transaction_id": p.transaction_id,
@@ -736,8 +785,6 @@ def get_audit_logs(current_user: User = Depends(require_admin), db: Session = De
             "details": l.details,
             "created_at": l.created_at.strftime("%Y-%m-%d %H:%M:%S")
         })
-    return res
-
     return res
 
 # ----------------------------------------------------

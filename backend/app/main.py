@@ -48,6 +48,8 @@ cors_origins = [
     "http://127.0.0.1:8000",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://smart-farmer-procurement.onrender.com",
+    "https://jai-kisan-project.onrender.com",
 ]
 frontend_url = os.environ.get("FRONTEND_URL", "").strip()
 if frontend_url and frontend_url not in cors_origins:

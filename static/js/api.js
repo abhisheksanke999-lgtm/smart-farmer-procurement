@@ -44,17 +44,29 @@ class ApiClient {
       headers["Authorization"] = `Bearer ${this.token}`;
     }
 
+    const controller = new AbortController();
+    const timeoutMs = options.timeoutMs || 15000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     let response;
     try {
       response = await fetch(`${API_BASE}${endpoint}`, {
         ...options,
-        headers
+        headers,
+        signal: controller.signal
       });
     } catch (networkErr) {
+      clearTimeout(timeoutId);
+      if (networkErr.name === 'AbortError') {
+        console.error(`Request Timeout [${endpoint}]: exceeded ${timeoutMs}ms`);
+        throw new Error(`Request timed out while connecting to ${endpoint}. Please check server connectivity and retry.`);
+      }
       console.error(`Network Error [${endpoint}]:`, networkErr);
       throw new Error(
-        `Unable to reach backend server at ${API_BASE}. Please make sure the Python server is running (run 'python run.py').`
+        `Unable to reach backend server at ${API_BASE}. Please make sure the server is active and accessible.`
       );
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     let data;

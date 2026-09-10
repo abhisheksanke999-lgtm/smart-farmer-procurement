@@ -262,6 +262,7 @@ class Payment(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     transaction = relationship("ProcurementTransaction", back_populates="payment")
+    farmer = relationship("User", foreign_keys=[farmer_id])
 
 class Notification(Base):
     __tablename__ = "notifications"

@@ -16,6 +16,29 @@ let adminCentreSearchQuery = "";
 let adminDealerFilter = "ALL";
 let adminMspSearchQuery = "";
 
+function renderAdminErrorState(errorMsg, retryFnName = "renderApp") {
+  return `
+    <div class="glass-card p-8 text-center max-w-xl mx-auto my-8 border-l-4 border-rose-500 shadow-xl space-y-4">
+      <div class="w-14 h-14 rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400 flex items-center justify-center mx-auto text-2xl font-black">
+        ⚠️
+      </div>
+      <div>
+        <h3 class="text-lg font-black text-slate-900 dark:text-white">Unable to Load Admin Dashboard</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${escapeHtml(errorMsg || "An error occurred while loading dashboard data.")}</p>
+      </div>
+      <div class="pt-2 flex items-center justify-center gap-3">
+        <button onclick="${retryFnName}()" class="btn-agri text-xs px-5 py-2.5 shadow-md flex items-center gap-2">
+          <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+          <span>Retry Loading Dashboard</span>
+        </button>
+        <button onclick="state.setActiveTab('dashboard'); renderApp();" class="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 transition">
+          Reset to Overview
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 async function renderAdminView() {
   const activeTab = state.activeTab;
 
@@ -26,90 +49,97 @@ async function renderAdminView() {
       api.getAdminCentres().catch(() => [])
     ]);
     if (stats) adminStatsCache = stats;
-    if (liveAct && liveAct.length) {
+    if (Array.isArray(liveAct) && liveAct.length) {
       adminLiveActivityCache = liveAct;
       if (!adminSelectedLiveCentreId) {
         adminSelectedLiveCentreId = liveAct[0].centre_id;
       }
     }
-    if (centres && centres.length) {
+    if (Array.isArray(centres) && centres.length) {
       adminCentresCache = centres;
     }
-  } catch (e) {}
-
-  let isDashboard = !activeTab || activeTab === 'dashboard' || activeTab === 'home';
-
-  let pageHeaderHtml = "";
-  let contentHtml = "";
-
-  if (activeTab === 'farmers') {
-    pageHeaderHtml = renderAdminSubpageHeader("👨‍🌾 Registered Farmers Registry", "Automated registry synced directly from farmer registrations with real-time dossiers.");
-    contentHtml = await renderAdminFarmersPage();
-  } else if (activeTab === 'approvals' || activeTab === 'dealers') {
-    pageHeaderHtml = renderAdminSubpageHeader("🏢 Registered Dealers & License Approvals", "Dealer licensing compliance, business profiles, and mandi allocations.");
-    contentHtml = await renderAdminDealerApprovals();
-  } else if (activeTab === 'centres') {
-    pageHeaderHtml = renderAdminSubpageHeader("🏬 Government Procurement Centres", "Mandi locations, operating hours, daily capacities, and assigned dealers.");
-    contentHtml = await renderAdminCentresPage();
-  } else if (activeTab === 'analytics') {
-    pageHeaderHtml = renderAdminSubpageHeader("📊 Reports & Executive Analytics", "Real-time macro procurement volume, crop breakdown, mandi metrics, and payment settlement tracking.");
-    contentHtml = await renderAdminAnalyticsPage();
-  } else if (activeTab === 'msp_rates') {
-    pageHeaderHtml = renderAdminSubpageHeader("🌾 Crop Rates & Official MSP Management", "Central Government Minimum Support Price (MSP) administration & official seasonal rate cards.");
-    contentHtml = await renderAdminMspRatesPage();
-  } else if (activeTab === 'live_activity') {
-    pageHeaderHtml = renderAdminSubpageHeader("📡 Live Procurement Activity Control Room", "Real-time mandi monitoring, weighbridge station metrics, and token progression.");
-    contentHtml = await renderAdminLiveActivityPage();
-  } else if (activeTab === 'admin_payments') {
-    pageHeaderHtml = renderAdminSubpageHeader("💳 Direct Benefit Transfer (DBT) Payouts", "Direct bank transfers, payment verification, and audit tracking.");
-    contentHtml = await renderAdminPaymentsPage();
-  } else if (activeTab === 'complaints') {
-    pageHeaderHtml = renderAdminSubpageHeader("💬 Grievance & Support Management", "Farmer complaints resolution and administrative oversight.");
-    contentHtml = await renderAdminComplaintsPage();
-  } else if (activeTab === 'assignments') {
-    pageHeaderHtml = renderAdminSubpageHeader("🌾 Farmer-Dealer Allocation & Hierarchy", "Administrative routing and crop procurement distribution.");
-    contentHtml = await renderAdminAssignmentsPage();
-  } else {
-    // Default: Executive Dashboard Overview
-    pageHeaderHtml = `
-      <!-- Executive Header -->
-      <div class="agri-gradient text-white p-6 rounded-2xl shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <span class="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-extrabold uppercase tracking-wider mb-2 inline-block">
-            SIH Problem Statement 26032 • Control Centre
-          </span>
-          <h2 class="text-2xl font-extrabold">${i18n.t('admin_dashboard_title')}</h2>
-          <p class="text-xs text-emerald-100 mt-0.5">Logged in as: <strong class="text-white">${state.currentUser ? state.currentUser.email : 'Administrator'}</strong></p>
-        </div>
-        
-        <div class="flex items-center gap-2">
-          <button onclick="renderApp()" class="px-3.5 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold border border-white/30 transition flex items-center gap-1.5 shadow-sm hover:scale-105 active:scale-95">
-            <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
-            <span>Refresh Data</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- 6 Primary Executive Button Cards (Direct Access to Key Sections) -->
-      ${renderAdminMetricCardsBar('dashboard')}
-    `;
-    contentHtml = await renderAdminDashboardHome();
+  } catch (e) {
+    console.warn("Background admin stats preload notice:", e);
   }
 
-  return `
-    <div class="space-y-6">
-      ${pageHeaderHtml}
+  try {
+    let isDashboard = !activeTab || activeTab === 'dashboard' || activeTab === 'home';
 
-      <!-- Dynamic Page Content -->
-      ${contentHtml}
+    let pageHeaderHtml = "";
+    let contentHtml = "";
 
-      <!-- Modals Container -->
-      ${renderFarmerDetailsModalHtml()}
-      ${renderDealerDetailsModalHtml()}
-      ${renderCentreDetailsModalHtml()}
-      ${renderMspRateEditModalHtml()}
-    </div>
-  `;
+    if (activeTab === 'farmers') {
+      pageHeaderHtml = renderAdminSubpageHeader("👨‍🌾 Registered Farmers Registry", "Automated registry synced directly from farmer registrations with real-time dossiers.");
+      contentHtml = await renderAdminFarmersPage();
+    } else if (activeTab === 'approvals' || activeTab === 'dealers') {
+      pageHeaderHtml = renderAdminSubpageHeader("🏢 Registered Dealers & License Approvals", "Dealer licensing compliance, business profiles, and mandi allocations.");
+      contentHtml = await renderAdminDealerApprovals();
+    } else if (activeTab === 'centres') {
+      pageHeaderHtml = renderAdminSubpageHeader("🏬 Government Procurement Centres", "Mandi locations, operating hours, daily capacities, and assigned dealers.");
+      contentHtml = await renderAdminCentresPage();
+    } else if (activeTab === 'analytics') {
+      pageHeaderHtml = renderAdminSubpageHeader("📊 Reports & Executive Analytics", "Real-time macro procurement volume, crop breakdown, mandi metrics, and payment settlement tracking.");
+      contentHtml = await renderAdminAnalyticsPage();
+    } else if (activeTab === 'msp_rates') {
+      pageHeaderHtml = renderAdminSubpageHeader("🌾 Crop Rates & Official MSP Management", "Central Government Minimum Support Price (MSP) administration & official seasonal rate cards.");
+      contentHtml = await renderAdminMspRatesPage();
+    } else if (activeTab === 'live_activity') {
+      pageHeaderHtml = renderAdminSubpageHeader("📡 Live Procurement Activity Control Room", "Real-time mandi monitoring, weighbridge station metrics, and token progression.");
+      contentHtml = await renderAdminLiveActivityPage();
+    } else if (activeTab === 'admin_payments') {
+      pageHeaderHtml = renderAdminSubpageHeader("💳 Direct Benefit Transfer (DBT) Payouts", "Direct bank transfers, payment verification, and audit tracking.");
+      contentHtml = await renderAdminPaymentsPage();
+    } else if (activeTab === 'complaints') {
+      pageHeaderHtml = renderAdminSubpageHeader("💬 Grievance & Support Management", "Farmer complaints resolution and administrative oversight.");
+      contentHtml = await renderAdminComplaintsPage();
+    } else if (activeTab === 'assignments') {
+      pageHeaderHtml = renderAdminSubpageHeader("🌾 Farmer-Dealer Allocation & Hierarchy", "Administrative routing and crop procurement distribution.");
+      contentHtml = await renderAdminAssignmentsPage();
+    } else {
+      // Default: Executive Dashboard Overview
+      pageHeaderHtml = `
+        <!-- Executive Header -->
+        <div class="agri-gradient text-white p-6 rounded-2xl shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <span class="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-extrabold uppercase tracking-wider mb-2 inline-block">
+              SIH Problem Statement 26032 • Control Centre
+            </span>
+            <h2 class="text-2xl font-extrabold">${i18n.t('admin_dashboard_title')}</h2>
+            <p class="text-xs text-emerald-100 mt-0.5">Logged in as: <strong class="text-white">${state.currentUser ? escapeHtml(state.currentUser.email) : 'Administrator'}</strong></p>
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <button onclick="renderApp()" class="px-3.5 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold border border-white/30 transition flex items-center gap-1.5 shadow-sm hover:scale-105 active:scale-95">
+              <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+              <span>Refresh Data</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 6 Primary Executive Button Cards (Direct Access to Key Sections) -->
+        ${renderAdminMetricCardsBar('dashboard')}
+      `;
+      contentHtml = await renderAdminDashboardHome();
+    }
+
+    return `
+      <div class="space-y-6">
+        ${pageHeaderHtml}
+
+        <!-- Dynamic Page Content -->
+        ${contentHtml}
+
+        <!-- Modals Container -->
+        ${renderFarmerDetailsModalHtml()}
+        ${renderDealerDetailsModalHtml()}
+        ${renderCentreDetailsModalHtml()}
+        ${renderMspRateEditModalHtml()}
+      </div>
+    `;
+  } catch (err) {
+    console.error("renderAdminView error:", err);
+    return renderAdminErrorState(err.message, "renderApp");
+  }
 }
 
 function renderAdminSubpageHeader(title, subtitle = "") {
@@ -1678,8 +1708,13 @@ async function handleTriggerPayment(paymentId) {
 async function renderAdminAuditLogSection() {
   let logs = [];
   try {
-    logs = await api.getAuditLogs();
-  } catch (e) {}
+    const res = await api.getAuditLogs();
+    logs = Array.isArray(res) ? res : [];
+  } catch (e) {
+    logs = [];
+  }
+
+  const safeLogs = Array.isArray(logs) ? logs : [];
 
   return `
     <div class="glass-card p-5 space-y-3">
@@ -1687,17 +1722,23 @@ async function renderAdminAuditLogSection() {
         <i data-lucide="shield" class="w-4 h-4 text-emerald-600"></i>
         System Audit Logs & Security Trail
       </h3>
-      <div class="divide-y divide-slate-200 dark:divide-slate-800 text-xs max-h-60 overflow-y-auto">
-        ${logs.map(l => `
-          <div class="py-2.5 flex items-start justify-between gap-4">
-            <div>
-              <span class="font-bold text-slate-800 dark:text-slate-200 font-mono">${l.action}</span>
-              <p class="text-slate-500 text-[11px]">${l.details}</p>
+      ${safeLogs.length === 0 ? `
+        <div class="py-6 text-center text-xs text-slate-400">
+          No audit logs recorded yet.
+        </div>
+      ` : `
+        <div class="divide-y divide-slate-200 dark:divide-slate-800 text-xs max-h-60 overflow-y-auto">
+          ${safeLogs.map(l => `
+            <div class="py-2.5 flex items-start justify-between gap-4">
+              <div>
+                <span class="font-bold text-slate-800 dark:text-slate-200 font-mono">${escapeHtml(l.action || 'SYSTEM')}</span>
+                <p class="text-slate-500 text-[11px]">${escapeHtml(l.details || '')}</p>
+              </div>
+              <span class="text-[10px] font-mono text-slate-400 flex-shrink-0">${escapeHtml(l.created_at || '')}</span>
             </div>
-            <span class="text-[10px] font-mono text-slate-400 flex-shrink-0">${l.created_at}</span>
-          </div>
-        `).join('')}
-      </div>
+          `).join('')}
+        </div>
+      `}
     </div>
   `;
 }
@@ -1715,12 +1756,14 @@ async function renderAdminComplaintsPage() {
 async function renderAdminAssignmentsSection() {
   let assignments = [];
   try {
-    assignments = await api.getAdminAssignments();
+    const res = await api.getAdminAssignments();
+    assignments = Array.isArray(res) ? res : [];
   } catch (e) {
     assignments = [];
   }
 
-  const activeCount = assignments.filter(a => a.status === 'ACTIVE').length;
+  const safeAssignments = Array.isArray(assignments) ? assignments : [];
+  const activeCount = safeAssignments.filter(a => a && a.status === 'ACTIVE').length;
 
   return `
     <div class="glass-card p-5 space-y-4">
@@ -1737,12 +1780,12 @@ async function renderAdminAssignmentsSection() {
             ${activeCount} Active
           </span>
           <button onclick="state.setActiveTab('assignments')" class="btn-agri text-xs py-1 px-3">
-            View All (${assignments.length})
+            View All (${safeAssignments.length})
           </button>
         </div>
       </div>
 
-      ${assignments.length === 0 ? `
+      ${safeAssignments.length === 0 ? `
         <div class="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-500">
           No farmer-dealer procurement assignments recorded yet.
         </div>
@@ -1760,25 +1803,25 @@ async function renderAdminAssignmentsSection() {
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-              ${assignments.slice(0, 5).map(a => `
+              ${safeAssignments.slice(0, 5).map(a => `
                 <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/60 transition">
                   <td class="py-2.5 font-bold text-slate-900 dark:text-white">
-                    ${escapeHtml(a.farmer_name)}
-                    <span class="block text-[10px] text-slate-400 font-normal">📞 ${escapeHtml(a.farmer_phone)}</span>
+                    ${escapeHtml(a.farmer_name || 'Farmer')}
+                    <span class="block text-[10px] text-slate-400 font-normal">📞 ${escapeHtml(a.farmer_phone || '')}</span>
                   </td>
-                  <td class="py-2.5 font-semibold text-slate-700 dark:text-slate-300">🌾 ${escapeHtml(a.product_name)}</td>
-                  <td class="py-2.5 text-slate-700 dark:text-slate-300">${escapeHtml(a.centre_name)}</td>
+                  <td class="py-2.5 font-semibold text-slate-700 dark:text-slate-300">🌾 ${escapeHtml(a.product_name || 'Produce')}</td>
+                  <td class="py-2.5 text-slate-700 dark:text-slate-300">${escapeHtml(a.centre_name || '')}</td>
                   <td class="py-2.5">
-                    <span class="font-bold text-emerald-700 dark:text-emerald-400 block">${escapeHtml(a.dealer_name)}</span>
+                    <span class="font-bold text-emerald-700 dark:text-emerald-400 block">${escapeHtml(a.dealer_name || 'Dealer')}</span>
                     <span class="text-[10px] text-slate-400">${escapeHtml(a.dealer_business || '')}</span>
                   </td>
                   <td class="py-2.5">
-                    <span class="font-mono font-bold text-slate-800 dark:text-slate-200 block">${escapeHtml(a.token_number || a.assignment_code)}</span>
+                    <span class="font-mono font-bold text-slate-800 dark:text-slate-200 block">${escapeHtml(a.token_number || a.assignment_code || '')}</span>
                     <span class="badge-status ${a.status === 'ACTIVE' ? 'badge-approved' : a.status === 'COMPLETED' ? 'badge-completed' : 'badge-rejected'} text-[10px] py-0.5 px-2">
-                      ${a.status}
+                      ${escapeHtml(a.status || 'ACTIVE')}
                     </span>
                   </td>
-                  <td class="py-2.5 text-right text-slate-400 text-[11px]">${a.created_at}</td>
+                  <td class="py-2.5 text-right text-slate-400 text-[11px]">${escapeHtml(a.created_at || '')}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -1792,11 +1835,79 @@ async function renderAdminAssignmentsSection() {
 async function renderAdminAssignmentsPage() {
   let assignments = [];
   try {
-    assignments = await api.getAdminAssignments();
+    const res = await api.getAdminAssignments();
+    assignments = Array.isArray(res) ? res : [];
   } catch (e) {
     assignments = [];
   }
 
+  const safeAssignments = Array.isArray(assignments) ? assignments : [];
+  const activeCount = safeAssignments.filter(a => a && a.status === 'ACTIVE').length;
+
+  return `
+    <div class="space-y-6">
+      <div class="glass-card p-5 border-l-4 border-emerald-500 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <span>🌾</span>
+            Farmer–Dealer Allocation Hierarchy
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            Real-time relationship mapping and crop routing across Mandis and licensed procurement dealers.
+          </p>
+        </div>
+        <div class="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs">
+          <span class="text-emerald-700 dark:text-emerald-400 block text-[10px] uppercase font-bold">Active Assignments</span>
+          <strong class="text-emerald-700 dark:text-emerald-400 font-mono text-sm">${activeCount} of ${safeAssignments.length}</strong>
+        </div>
+      </div>
+
+      <div class="glass-card p-5 space-y-4">
+        ${safeAssignments.length === 0 ? `
+          <div class="p-10 text-center text-slate-400 text-xs">No farmer-dealer procurement assignments recorded yet.</div>
+        ` : `
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
+                  <th class="pb-3 px-2">Assignment Code</th>
+                  <th class="pb-3 px-2">Farmer</th>
+                  <th class="pb-3 px-2">Crop / Produce</th>
+                  <th class="pb-3 px-2">Procurement Centre</th>
+                  <th class="pb-3 px-2">Assigned Dealer</th>
+                  <th class="pb-3 px-2">Booking Token</th>
+                  <th class="pb-3 px-2">Status</th>
+                  <th class="pb-3 px-2 text-right">Created</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                ${safeAssignments.map(a => `
+                  <tr class="hover:bg-slate-50/70 dark:hover:bg-slate-800/60 transition">
+                    <td class="py-3 px-2 font-mono font-bold text-emerald-600 dark:text-emerald-400">${escapeHtml(a.assignment_code || '')}</td>
+                    <td class="py-3 px-2">
+                      <div class="font-extrabold text-slate-900 dark:text-white">${escapeHtml(a.farmer_name || 'Farmer')}</div>
+                      <div class="text-[10px] text-slate-400">📞 ${escapeHtml(a.farmer_phone || 'N/A')}</div>
+                    </td>
+                    <td class="py-3 px-2 font-semibold text-slate-700 dark:text-slate-300">🌾 ${escapeHtml(a.product_name || 'Produce')}</td>
+                    <td class="py-3 px-2 text-slate-700 dark:text-slate-300">${escapeHtml(a.centre_name || 'Mandi')}</td>
+                    <td class="py-3 px-2">
+                      <div class="font-bold text-slate-900 dark:text-white">${escapeHtml(a.dealer_name || 'Dealer')}</div>
+                      <div class="text-[10px] text-slate-400">${escapeHtml(a.dealer_business || '')}</div>
+                    </td>
+                    <td class="py-3 px-2 font-mono font-bold text-blue-600 dark:text-blue-400">${escapeHtml(a.token_number || a.booking_code || 'N/A')}</td>
+                    <td class="py-3 px-2">
+                      <span class="badge-status ${a.status === 'ACTIVE' ? 'badge-approved' : a.status === 'COMPLETED' ? 'badge-completed' : 'badge-rejected'} text-[10px] py-0.5 px-2">
+                        ${escapeHtml(a.status || 'ACTIVE')}
+                      </span>
+                    </td>
+                    <td class="py-3 px-2 text-right text-slate-400 font-mono text-[11px]">${escapeHtml(a.created_at || '')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
     </div>
   `;
 }

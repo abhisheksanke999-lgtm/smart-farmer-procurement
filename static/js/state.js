@@ -10,7 +10,7 @@ function escapeHtml(str) {
 window.escapeHtml = escapeHtml;
 
 const ROLE_ALLOWED_TABS = {
-  ADMIN: ['dashboard', 'approvals', 'dealers', 'centres', 'farmers', 'assignments', 'live_activity', 'admin_payments', 'complaints'],
+  ADMIN: ['dashboard', 'approvals', 'dealers', 'centres', 'farmers', 'assignments', 'live_activity', 'admin_payments', 'complaints', 'analytics', 'msp_rates'],
   FARMER: ['home', 'book_slot', 'live_queue', 'receipts', 'payments', 'my_bookings', 'center_status'],
   DEALER: ['home', 'scan_qr', 'process_procurement_form', 'transactions']
 };
