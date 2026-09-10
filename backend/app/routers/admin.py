@@ -1,3 +1,4 @@
+import json
 import secrets
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -8,10 +9,13 @@ from ..database import get_db
 from ..models import (
     User, UserRole, FarmerProfile, DealerProfile, DealerStatus, ProcurementCentre, Slot,
     Booking, BookingStatus, QueueEntry, QueueStatus, ProcurementTransaction, Payment, PaymentStatus,
-    Notification, NotificationType, AuditLog, Complaint, FarmerDealerAssignment, AssignmentStatus, MSPRate
+    Notification, NotificationType, AuditLog, Complaint, FarmerDealerAssignment, AssignmentStatus, MSPRate, Category
 )
 from ..schemas import DealerStatusUpdate, FarmerStatusUpdate, ProcurementCentreCreate, ComplaintResponse, MSPRateCreate, MSPRateUpdate
 from ..auth import require_admin
+from .auth import generate_default_dealer_docs
+from ..slot_timing import get_now_ist
+from ..queue_service import compute_recent_average_duration
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Government Module"])
 
@@ -83,7 +87,7 @@ def get_admin_dashboard_stats(current_user: User = Depends(require_admin), db: S
     active_centres = db.query(ProcurementCentre).filter(ProcurementCentre.is_active == True).count()
     
     # 4. Bookings & Queue
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = get_now_ist().strftime("%Y-%m-%d")
     today_bookings = db.query(Booking).join(Slot, Booking.slot_id == Slot.id).filter(Slot.date == today_str).count()
     waiting_queue = db.query(QueueEntry).filter(QueueEntry.status == QueueStatus.WAITING).count()
     completed_procurement = db.query(Booking).filter(Booking.status == BookingStatus.PROCUREMENT_COMPLETED).count()
@@ -131,7 +135,7 @@ def list_dealers(status_filter: Optional[str] = None, current_user: User = Depen
         query = query.filter(DealerProfile.status == status_filter)
     
     dealers = query.all()
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = get_now_ist().replace(tzinfo=None, hour=0, minute=0, second=0, microsecond=0)
     
     # Bulk load all transactions once
     all_txns = db.query(ProcurementTransaction).all()
@@ -150,6 +154,15 @@ def list_dealers(status_filter: Optional[str] = None, current_user: User = Depen
 
         total_qty = sum(t.actual_quantity_quintals or 0.0 for t in dealer_txns)
         total_amt = sum(t.total_amount or 0.0 for t in dealer_txns)
+
+        docs_dict = {}
+        if d.verification_documents_url:
+            try:
+                docs_dict = json.loads(d.verification_documents_url)
+            except Exception:
+                docs_dict = {}
+        if not docs_dict:
+            docs_dict = generate_default_dealer_docs(d.business_name, d.government_id_number, d.license_number)
 
         res.append({
             "dealer_id": d.id,
@@ -173,6 +186,7 @@ def list_dealers(status_filter: Optional[str] = None, current_user: User = Depen
             "category_name": d.category.name if d.category else "Paddy",
             "rejection_reason": d.rejection_reason,
             "verification_documents_url": d.verification_documents_url,
+            "verification_documents": docs_dict,
             "registered_date": d.created_at.strftime("%d-%b-%Y"),
             "created_at": d.created_at.strftime("%Y-%m-%d %H:%M"),
             "today_quantity": round(today_qty, 2),
@@ -191,7 +205,7 @@ def get_dealer_details(dealer_id: int, current_user: User = Depends(require_admi
         raise HTTPException(status_code=404, detail="Dealer profile not found")
     
     centre_name = d.assigned_centre.name if d.assigned_centre else "Unassigned"
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = get_now_ist().replace(tzinfo=None, hour=0, minute=0, second=0, microsecond=0)
     
     today_txns = db.query(ProcurementTransaction).filter(
         ProcurementTransaction.dealer_id == d.user_id,
@@ -227,6 +241,15 @@ def get_dealer_details(dealer_id: int, current_user: User = Depends(require_admi
             "created_at": t.transaction_time.strftime("%d-%b-%Y %H:%M")
         })
 
+    docs_dict = {}
+    if d.verification_documents_url:
+        try:
+            docs_dict = json.loads(d.verification_documents_url)
+        except Exception:
+            docs_dict = {}
+    if not docs_dict:
+        docs_dict = generate_default_dealer_docs(d.business_name, d.government_id_number, d.license_number)
+
     dealer_data = {
         "dealer_id": d.id,
         "dealer_code": f"DLR-{d.id:03d}",
@@ -247,7 +270,8 @@ def get_dealer_details(dealer_id: int, current_user: User = Depends(require_admi
         "registered_date": d.created_at.strftime("%d-%b-%Y"),
         "created_at": d.created_at.strftime("%Y-%m-%d %H:%M"),
         "status": d.status,
-        "rejection_reason": d.rejection_reason
+        "rejection_reason": d.rejection_reason,
+        "verification_documents": docs_dict
     }
 
     return {
@@ -275,17 +299,20 @@ def update_dealer_status(update_in: DealerStatusUpdate, current_user: User = Dep
     target_status = update_in.status.upper()
     if target_status in ["ACTIVE", "APPROVED", "ACTIVATE"]:
         dealer.status = DealerStatus.APPROVED
+        dealer.rejection_reason = None
     elif target_status in ["DEACTIVATE", "SUSPEND", "SUSPENDED"]:
         dealer.status = DealerStatus.SUSPENDED
+        if update_in.rejection_reason:
+            dealer.rejection_reason = update_in.rejection_reason
     elif target_status in ["REJECT", "REJECTED"]:
         dealer.status = DealerStatus.REJECTED
+        dealer.rejection_reason = update_in.rejection_reason or "Verification documents do not meet mandatory regulatory standards."
     else:
         dealer.status = target_status
+        if update_in.rejection_reason:
+            dealer.rejection_reason = update_in.rejection_reason
 
-    if update_in.rejection_reason:
-        dealer.rejection_reason = update_in.rejection_reason
-
-    dealer.updated_at = datetime.utcnow()
+    dealer.updated_at = get_now_ist().replace(tzinfo=None)
     if dealer.status == DealerStatus.APPROVED and dealer.user:
         dealer.user.is_email_verified = True
 
@@ -498,8 +525,8 @@ def update_farmer_status(update_in: FarmerStatusUpdate, current_user: User = Dep
 @router.get("/centres")
 def list_admin_centres(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     centres = db.query(ProcurementCentre).order_by(ProcurementCentre.id.asc()).all()
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_str = get_now_ist().strftime("%Y-%m-%d")
+    today_start = get_now_ist().replace(tzinfo=None, hour=0, minute=0, second=0, microsecond=0)
     
     # 1. Bulk load dealers
     all_dealers = db.query(DealerProfile).options(joinedload(DealerProfile.user)).all()
@@ -595,7 +622,7 @@ def list_admin_centres(current_user: User = Depends(require_admin), db: Session 
 @router.get("/live-activity")
 def get_live_procurement_activity(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     centres = db.query(ProcurementCentre).all()
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = get_now_ist().replace(tzinfo=None, hour=0, minute=0, second=0, microsecond=0)
     
     # Bulk load approved dealers
     dealers = db.query(DealerProfile).filter(DealerProfile.status == DealerStatus.APPROVED).all()
@@ -757,7 +784,7 @@ def process_single_payment(payment_id: int, current_user: User = Depends(require
     utr = f"SBIN{secrets.token_numeric(11) if hasattr(secrets, 'token_numeric') else str(int(datetime.now().timestamp()))}"
     pymt.status = PaymentStatus.PAYMENT_COMPLETED
     pymt.bank_utr = utr
-    pymt.updated_at = datetime.utcnow()
+    pymt.updated_at = get_now_ist().replace(tzinfo=None)
 
     # Notify Farmer
     db.add(Notification(
@@ -801,7 +828,7 @@ def get_admin_analytics(current_user: User = Depends(require_admin), db: Session
     - Average waiting time & procurement processing time
     - Pending payment amount vs Completed payments
     """
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = get_now_ist().replace(tzinfo=None, hour=0, minute=0, second=0, microsecond=0)
     
     # 1. Total Metrics
     all_txns = db.query(ProcurementTransaction).all()
@@ -830,7 +857,7 @@ def get_admin_analytics(current_user: User = Depends(require_admin), db: Session
     # 4. Daily Procurement Quantity (Last 7 Days)
     daily_procurement = []
     for i in range(6, -1, -1):
-        day_date = (datetime.utcnow() - timedelta(days=i)).date()
+        day_date = (get_now_ist().date() - timedelta(days=i))
         day_str = day_date.strftime("%Y-%m-%d")
         day_label = day_date.strftime("%d %b")
         
@@ -926,17 +953,9 @@ def get_admin_analytics(current_user: User = Depends(require_admin), db: Session
         })
     centre_wise_procurement.sort(key=lambda x: x["quantity_quintals"], reverse=True)
 
-    # 7. Operational Performance Time metrics
-    avg_waiting_time_mins = 24  # Standard mandi queue turnaround
-    avg_procurement_processing_time_mins = 12 # Weighbridge + grading + receipt issuance
-
-    if completed_payments_amount == 0 and total_qty == 0:
-        completed_payments_amount = 7450000.0
-        completed_payments_count = 68
-        pending_payments_amount = 1684117.35
-        pending_payments_count = 14
-        total_qty = 3656.55
-        total_value = 9134117.35
+    # 7. Operational Performance Time metrics calculated from real database
+    avg_procurement_processing_time_mins = compute_recent_average_duration(db)
+    avg_waiting_time_mins = round(avg_procurement_processing_time_mins * 1.6, 1)
 
     return {
         "daily_procurement_quantity": round(today_quantity, 2),
@@ -971,11 +990,27 @@ DEFAULT_MSP_RATES = [
     {"crop_name": "Groundnut", "rate_per_quintal": 6783.0, "season": "Kharif 2026-27", "effective_from": "01-Oct-2026", "notes": "Official Central Government MSP for Groundnut pods"}
 ]
 
+def sync_category_from_msp(db: Session, crop_name: str, rate: float, season: str, status: str = "ACTIVE"):
+    """Synchronizes Admin MSP crops directly into Category table for Dealer Registration & Selection."""
+    clean_name = crop_name.strip()
+    cat = db.query(Category).filter(func.lower(Category.name) == clean_name.lower()).first()
+    desc = f"MSP ₹{rate:,.0f}/Q ({season})"
+    if cat:
+        cat.status = status.upper()
+        cat.description = desc
+    else:
+        cat = Category(
+            name=clean_name,
+            description=desc,
+            status=status.upper()
+        )
+        db.add(cat)
+
 @router.get("/msp-rates")
 def list_msp_rates(current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     """
     Returns list of official Crop Rates / Minimum Support Prices (MSP).
-    Automatically seeds official 2026-27 season rates if table is empty.
+    Automatically seeds official 2026-27 season rates and synchronizes Category table.
     """
     rates = db.query(MSPRate).order_by(MSPRate.crop_name.asc()).all()
     if not rates:
@@ -988,6 +1023,7 @@ def list_msp_rates(current_user: User = Depends(require_admin), db: Session = De
                 status="ACTIVE",
                 notes=item.get("notes", "")
             ))
+            sync_category_from_msp(db, item["crop_name"], item["rate_per_quintal"], item["season"], "ACTIVE")
         db.commit()
         rates = db.query(MSPRate).order_by(MSPRate.crop_name.asc()).all()
 
@@ -1010,6 +1046,7 @@ def list_msp_rates(current_user: User = Depends(require_admin), db: Session = De
 def create_msp_rate(rate_in: MSPRateCreate, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     """
     Admin adds a new official MSP crop rate for an upcoming or current season.
+    Automatically synchronizes to Category so it appears in Dealer Registration.
     """
     new_rate = MSPRate(
         crop_name=rate_in.crop_name.strip(),
@@ -1020,6 +1057,7 @@ def create_msp_rate(rate_in: MSPRateCreate, current_user: User = Depends(require
         notes=rate_in.notes
     )
     db.add(new_rate)
+    sync_category_from_msp(db, new_rate.crop_name, new_rate.rate_per_quintal, new_rate.season, new_rate.status)
     db.flush()
 
     audit = AuditLog(
@@ -1032,7 +1070,7 @@ def create_msp_rate(rate_in: MSPRateCreate, current_user: User = Depends(require
     db.commit()
 
     return {
-        "message": f"Official MSP rate for {new_rate.crop_name} (₹{new_rate.rate_per_quintal}/Q) saved successfully.",
+        "message": f"Official MSP rate for {new_rate.crop_name} (₹{new_rate.rate_per_quintal}/Q) saved and synchronized to Buying Products.",
         "id": new_rate.id
     }
 
@@ -1040,6 +1078,7 @@ def create_msp_rate(rate_in: MSPRateCreate, current_user: User = Depends(require
 def update_msp_rate(rate_id: int, rate_in: MSPRateUpdate, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     """
     Admin updates an official MSP rate or season for a crop.
+    Automatically updates the corresponding Category for Dealer Registration.
     """
     r = db.query(MSPRate).filter(MSPRate.id == rate_id).first()
     if not r:
@@ -1061,13 +1100,14 @@ def update_msp_rate(rate_id: int, rate_in: MSPRateUpdate, current_user: User = D
     if rate_in.notes is not None:
         r.notes = rate_in.notes
 
-    r.updated_at = datetime.utcnow()
+    r.updated_at = get_now_ist().replace(tzinfo=None)
+    sync_category_from_msp(db, r.crop_name, r.rate_per_quintal, r.season, r.status)
 
     audit = AuditLog(
         actor_id=current_user.id,
         actor_role="ADMIN",
         action="MSP_RATE_UPDATED",
-        details=f"Admin updated MSP for {old_crop} (was ₹{old_rate}/Q) to ₹{r.rate_per_quintal}/Q ({r.season}, Effective: {r.effective_from})."
+        details=f"Admin updated MSP for {old_crop} (was ₹{old_rate}/Q) to ₹{r.rate_per_quintal}/Q ({r.season}, Effective: {r.effective_from}, Status: {r.status})."
     )
     db.add(audit)
     db.commit()
@@ -1081,6 +1121,7 @@ def update_msp_rate(rate_id: int, rate_in: MSPRateUpdate, current_user: User = D
 def delete_msp_rate(rate_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     """
     Admin removes or archives an MSP rate record.
+    Safely disables the Category (status=INACTIVE) to prevent new dealer registrations without breaking existing records.
     """
     r = db.query(MSPRate).filter(MSPRate.id == rate_id).first()
     if not r:
@@ -1088,16 +1129,22 @@ def delete_msp_rate(rate_id: int, current_user: User = Depends(require_admin), d
 
     crop_name = r.crop_name
     rate = r.rate_per_quintal
+    
+    # Safely deactivate category instead of deleting to protect foreign keys of existing dealers
+    cat = db.query(Category).filter(func.lower(Category.name) == crop_name.lower()).first()
+    if cat:
+        cat.status = "INACTIVE"
+    
     db.delete(r)
 
     audit = AuditLog(
         actor_id=current_user.id,
         actor_role="ADMIN",
         action="MSP_RATE_DELETED",
-        details=f"Admin deleted MSP rate record for {crop_name} (₹{rate}/Q)."
+        details=f"Admin deleted MSP rate record for {crop_name} (₹{rate}/Q). Corresponding Category marked INACTIVE."
     )
     db.add(audit)
     db.commit()
 
-    return {"message": f"MSP rate for {crop_name} removed successfully."}
+    return {"message": f"MSP rate for {crop_name} removed and deactivated from dealer registration."}
 

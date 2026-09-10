@@ -38,8 +38,9 @@ from backend.app.database import SessionLocal
 from backend.app.models import (
     User, UserRole, DealerProfile, DealerStatus, FarmerProfile,
     ProcurementCentre, Slot, Booking, BookingStatus, FarmerDealerAssignment,
-    AssignmentStatus, QueueEntry, QueueStatus
+    AssignmentStatus, QueueEntry, QueueStatus, Category
 )
+
 from backend.app.auth import get_password_hash, create_access_token
 
 TEST_PORT = 8019
@@ -117,21 +118,22 @@ def run_tests():
             db.commit()
             db.refresh(pk)
 
-        # Ensure active slots exist for BV
-        slot_bv = db.query(Slot).filter(Slot.centre_id == bv.id, Slot.is_active == True).first()
-        if not slot_bv:
-            slot_bv = Slot(
-                centre_id=bv.id,
-                date=date.today().strftime("%Y-%m-%d"),
-                start_time="09:00",
-                end_time="11:00",
-                capacity=50,
-                booked_count=0,
-                is_active=True
-            )
-            db.add(slot_bv)
-            db.commit()
-            db.refresh(slot_bv)
+        # Ensure active valid future slot exists for BV
+        from datetime import timedelta
+        future_date = (date.today() + timedelta(days=2)).strftime("%Y-%m-%d")
+        slot_bv = Slot(
+            centre_id=bv.id,
+            date=future_date,
+            start_time="10:00 AM",
+            end_time="12:00 PM",
+            capacity=50,
+            booked_count=0,
+            is_active=True
+        )
+        db.add(slot_bv)
+        db.commit()
+        db.refresh(slot_bv)
+
 
         print(f"✓ Bhimavaram Centre ID: {bv.id} (crops: {bv.supported_crops})")
         print(f"✓ Palakollu Centre ID: {pk.id} (crops: {pk.supported_crops})")
@@ -149,6 +151,7 @@ def run_tests():
         dealer_tokens = {}
         dealer_users = {}
 
+        paddy_cat = db.query(Category).first()
         for name, email, centre_id, biz_name, lic in dealers_info:
             user = db.query(User).filter(User.email == email).first()
             if not user:
@@ -162,6 +165,10 @@ def run_tests():
                 )
                 db.add(user)
                 db.flush()
+            else:
+                user.name = name
+                user.role = UserRole.DEALER
+                user.is_email_verified = True
 
             dp = db.query(DealerProfile).filter(DealerProfile.user_id == user.id).first()
             if not dp:
@@ -175,17 +182,23 @@ def run_tests():
                     government_id_number=f"37AAACT{secrets.randbelow(9000) + 1000}H1Z{secrets.randbelow(9)}",
                     license_number=lic,
                     status=DealerStatus.APPROVED,
-                    assigned_centre_id=centre_id
+                    assigned_centre_id=centre_id,
+                    category_id=paddy_cat.id if paddy_cat else 1
                 )
                 db.add(dp)
             else:
+                dp.business_name = biz_name
                 dp.status = DealerStatus.APPROVED
                 dp.assigned_centre_id = centre_id
+                dp.category_id = paddy_cat.id if paddy_cat else 1
             db.commit()
             db.refresh(user)
+            db.refresh(dp)
+
             dealer_users[name] = user
             dealer_tokens[name] = create_access_token(data={"sub": user.email, "role": user.role, "user_id": user.id})
             print(f"✓ Dealer '{name}' approved at Centre ID {centre_id} ({biz_name})")
+
 
         # -------------------------------------------------------------
         # STEP 3: Test Dealer Registration Mandatory Centre & Address Validation
@@ -205,6 +218,8 @@ def run_tests():
         print("✓ Registration rejected when Procurement Center is missing (HTTP 400)")
 
         # B) Missing address
+        paddy_cat = db.query(Category).first()
+        cat_id = paddy_cat.id if paddy_cat else 1
         status, res_no_addr = api_request("POST", "/api/auth/register", data={
             "name": "Invalid Dealer 2",
             "email": "invalid.dealer2@test.com",
@@ -212,11 +227,13 @@ def run_tests():
             "password": "Password123!",
             "role": "DEALER",
             "assigned_centre_id": bv.id,
+            "category_id": cat_id,
             "address": ""
         })
         assert status == 400, f"Expected 400 for missing address, got {status}"
         assert "Address is required" in str(res_no_addr)
         print("✓ Registration rejected when Address is missing (HTTP 400)")
+
 
         # -------------------------------------------------------------
         # STEP 4: Setup Farmer Ramu

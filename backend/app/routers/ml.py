@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import ProcurementCentre, Booking, QueueEntry, QueueStatus
+from ..queue_service import compute_recent_average_duration
 
 router = APIRouter(prefix="/api/ml", tags=["Future AI/ML Intelligence Extension"])
 
@@ -18,8 +19,8 @@ def predict_waiting_time(centre_id: int, expected_quantity: float = 40.0, db: Se
         QueueEntry.status == QueueStatus.WAITING
     ).count()
 
-    base_minutes_per_farmer = 12.5
-    predicted_wait_mins = int(queue_count * base_minutes_per_farmer + (expected_quantity * 0.2))
+    base_minutes_per_farmer = compute_recent_average_duration(db, centre_id=centre_id)
+    predicted_wait_mins = int(queue_count * base_minutes_per_farmer + (expected_quantity * 0.1))
 
     confidence_score = round(random.uniform(0.88, 0.96), 2)
     peak_probability = "HIGH" if queue_count > 5 else "LOW"

@@ -11,8 +11,8 @@ window.escapeHtml = escapeHtml;
 
 const ROLE_ALLOWED_TABS = {
   ADMIN: ['dashboard', 'approvals', 'dealers', 'centres', 'farmers', 'assignments', 'live_activity', 'admin_payments', 'complaints', 'analytics', 'msp_rates'],
-  FARMER: ['home', 'book_slot', 'live_queue', 'receipts', 'payments', 'my_bookings', 'center_status'],
-  DEALER: ['home', 'scan_qr', 'process_procurement_form', 'transactions']
+  FARMER: ['home', 'book_slot', 'live_queue', 'receipts', 'payments', 'my_bookings', 'center_status', 'profile'],
+  DEALER: ['home', 'scan_qr', 'assigned_farmers', 'farmer_bookings', 'slots', 'process_procurement_form', 'auto_procure', 'transactions', 'profile']
 };
 
 class AppStateStore {

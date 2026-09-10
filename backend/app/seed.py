@@ -17,7 +17,6 @@ def seed_database():
     DOES NOT insert dummy/test farmers or dummy/test dealers.
     All Farmers and Dealers register via real registration with Email OTP verification.
     """
-    Base.metadata.create_all(bind=engine)
     db: Session = SessionLocal()
 
     try:
@@ -56,12 +55,11 @@ def seed_database():
                 "status": "ACTIVE"
             }
         ]
+        existing_cat_names = set(c.name for c in db.query(Category.name).all())
         for cat_data in standard_categories:
-            cat_exists = db.query(Category).filter(Category.name == cat_data["name"]).first()
-            if not cat_exists:
+            if cat_data["name"] not in existing_cat_names:
                 new_cat = Category(**cat_data)
                 db.add(new_cat)
-                db.flush()
 
         # 3. Ensure Procurement Centres exist (including Bhimavaram, Palakollu, Tanuku)
         standard_centres = [
@@ -144,17 +142,16 @@ def seed_database():
             }
         ]
 
+        existing_centres = {pc.code: pc for pc in db.query(ProcurementCentre).all()}
         for c_data in standard_centres:
-            existing = db.query(ProcurementCentre).filter(ProcurementCentre.code == c_data["code"]).first()
-            if not existing:
+            if c_data["code"] not in existing_centres:
                 pc = ProcurementCentre(**c_data)
                 db.add(pc)
-                db.flush()
             else:
+                existing = existing_centres[c_data["code"]]
                 if not existing.supported_crops:
                     existing.supported_crops = c_data["supported_crops"]
-                    db.flush()
-
+        db.flush()
         all_centres = db.query(ProcurementCentre).all()
 
         # 4. Ensure Slots exist for all active centres in IST timezone
@@ -172,24 +169,27 @@ def seed_database():
             ("03:00 PM", "05:00 PM")
         ]
 
+        existing_slots_set = set(
+            db.query(Slot.centre_id, Slot.date, Slot.start_time)
+            .filter(Slot.date.in_(dates))
+            .all()
+        )
+
+        new_slots = []
         for pc in all_centres:
             for d in dates:
                 for start, end in time_slots:
-                    slot_exists = db.query(Slot).filter(
-                        Slot.centre_id == pc.id,
-                        Slot.date == d,
-                        Slot.start_time == start
-                    ).first()
-                    if not slot_exists:
-                        slot = Slot(
+                    if (pc.id, d, start) not in existing_slots_set:
+                        new_slots.append(Slot(
                             centre_id=pc.id,
                             date=d,
                             start_time=start,
                             end_time=end,
                             capacity=20,
                             booked_count=0
-                        )
-                        db.add(slot)
+                        ))
+        if new_slots:
+            db.bulk_save_objects(new_slots)
         db.flush()
 
         # 5. Ensure System Audit Log exists

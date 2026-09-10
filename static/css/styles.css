@@ -522,19 +522,146 @@ body.dark-mode ::-webkit-scrollbar-thumb {
   background: #475569;
 }
 
-/* Printable Receipt Styles */
+/* High-Quality Printable Receipt & Voucher Styles */
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: A4 portrait;
+    margin: 10mm 15mm;
   }
-  #printable-receipt-area, #printable-receipt-area * {
-    visibility: visible;
+  
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
+
+  html, body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Keep #app active as layout host */
+  #app {
+    display: block !important;
+    visibility: visible !important;
+    min-height: auto !important;
+    height: auto !important;
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide app shell headers, bottom navigation, main content, drawers, buttons */
+  header,
+  nav,
+  #app-main-content,
+  #notification-drawer-container,
+  button,
+  .btn-agri,
+  .no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Ensure receipt container expands naturally across page */
+  #receipt-modal-container {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
+  #receipt-modal-container .fixed {
+    position: static !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    inset: auto !important;
+  }
+
+  #receipt-modal-container .max-w-lg,
+  #receipt-modal-container .rounded-3xl,
+  #receipt-modal-container .bg-white,
+  #receipt-modal-container .dark\:bg-slate-900 {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    border: 2px solid #0f766e !important;
+    border-radius: 16px !important;
+    padding: 24px !important;
+    margin: 0 auto !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
+  }
+
   #printable-receipt-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    page-break-inside: avoid !important;
+  }
+
+  #printable-receipt-area * {
+    visibility: visible !important;
+  }
+
+  /* QR Modal Container Print Support */
+  #qr-modal-container {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
+  #qr-modal-container .fixed {
+    position: static !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    inset: auto !important;
+  }
+
+  #qr-modal-container .max-w-sm,
+  #qr-modal-container .rounded-2xl,
+  #qr-modal-container .bg-white,
+  #qr-modal-container .dark\:bg-slate-900 {
+    max-width: 480px !important;
+    width: 100% !important;
+    box-shadow: none !important;
+    border: 2px solid #065f46 !important;
+    border-radius: 16px !important;
+    padding: 24px !important;
+    margin: 0 auto !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
   }
 }
 

@@ -238,7 +238,26 @@ class I18nManager {
     if (translations[lang]) {
       this.currentLang = lang;
       localStorage.setItem("app_lang", lang);
+
+      // Immediately update language switcher buttons in DOM for instant visual feedback
+      const enBtn = document.getElementById("lang-btn-en");
+      const teBtn = document.getElementById("lang-btn-te");
+      if (enBtn && teBtn) {
+        if (lang === 'en') {
+          enBtn.className = "px-3 py-1 rounded-lg transition-all duration-150 text-xs font-black cursor-pointer bg-amber-400 text-slate-950 shadow-md ring-2 ring-white scale-105";
+          teBtn.className = "px-3 py-1 rounded-lg transition-all duration-150 text-xs font-black cursor-pointer text-white/80 hover:text-white hover:bg-white/15";
+        } else {
+          teBtn.className = "px-3 py-1 rounded-lg transition-all duration-150 text-xs font-black cursor-pointer bg-amber-400 text-slate-950 shadow-md ring-2 ring-white scale-105";
+          enBtn.className = "px-3 py-1 rounded-lg transition-all duration-150 text-xs font-black cursor-pointer text-white/80 hover:text-white hover:bg-white/15";
+        }
+      }
+
       document.dispatchEvent(new CustomEvent("languageChanged", { detail: { lang } }));
+      if (typeof scheduleRender === 'function') {
+        scheduleRender();
+      } else if (typeof renderApp === 'function') {
+        renderApp();
+      }
     }
   }
 

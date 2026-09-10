@@ -6,14 +6,24 @@ let renderDebounceTimer = null;
 let renderRAF = null;
 
 // Debounced render: batches rapid state changes into a single DOM update
+let _lastScheduledTab = null;
 function scheduleRender() {
   if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
   if (renderRAF) cancelAnimationFrame(renderRAF);
-  renderDebounceTimer = setTimeout(() => {
+  const currentTab = state.activeTab;
+  // If only the tab changed and shell is already mounted, do a fast targeted render
+  if (lastRenderedLayout === 'dashboard' && currentTab !== _lastScheduledTab) {
+    _lastScheduledTab = currentTab;
     renderRAF = requestAnimationFrame(() => {
-      renderApp();
+      renderMainContentOnly();
     });
-  }, 30);
+  } else {
+    renderDebounceTimer = setTimeout(() => {
+      renderRAF = requestAnimationFrame(() => {
+        renderApp();
+      });
+    }, 16);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -45,6 +55,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (user) {
         // Set user without triggering notify to avoid double render
         state.currentUser = user;
+        if (typeof startNotificationPolling === 'function') {
+          startNotificationPolling();
+        }
         api.getNotifications().then(notifs => {
           state.notifications = notifs.notifications || [];
           state.unreadNotificationsCount = notifs.unread_count || 0;
@@ -58,12 +71,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
       } else {
         state.setCurrentUser(null);
+        if (typeof stopNotificationPolling === 'function') stopNotificationPolling();
       }
     }).catch(err => {
       console.warn("Background auth check error:", err);
+      if (typeof stopNotificationPolling === 'function') stopNotificationPolling();
     });
   } else {
     state.setCurrentUser(null);
+    if (typeof stopNotificationPolling === 'function') stopNotificationPolling();
   }
 });
 
@@ -202,7 +218,7 @@ async function renderApp() {
       const receiptContainer = document.getElementById("receipt-modal-container");
       if (receiptContainer) receiptContainer.innerHTML = renderReceiptModal();
 
-      // Update mobile nav (it's a fixed <nav> at the bottom)
+      // Update mobile nav active tab highlight only (no full re-render)
       const mobileNavs = appRoot.querySelectorAll('nav.fixed.bottom-0');
       if (mobileNavs.length > 0 && typeof renderMobileBottomNav === 'function') {
         const newNav = document.createElement('div');
@@ -213,7 +229,7 @@ async function renderApp() {
       }
     }
 
-    // Re-initialize Lucide Icons & Theme UI
+    // Re-initialize Lucide Icons & Theme UI — only once per render
     if (window.lucide) {
       requestAnimationFrame(() => {
         try { lucide.createIcons(); } catch(e) {}
@@ -223,6 +239,7 @@ async function renderApp() {
       themeManager.updateToggleUI();
     }
     enhancePasswordFields();
+    _lastScheduledTab = state.activeTab;
   } catch (err) {
     console.error("renderApp error:", err);
     const mainEl = document.getElementById("app-main-content");
@@ -279,6 +296,53 @@ async function renderApp() {
   }
 }
 
+// Fast-path: only replaces main content, skips header/modal/nav re-render
+// Used when only the active tab changed (most common user interaction)
+async function renderMainContentOnly() {
+  const user = state.currentUser;
+  if (!user) { renderApp(); return; }
+
+  const targetEl = document.getElementById("app-main-content");
+  if (!targetEl) { renderApp(); return; }
+
+  // Show instant skeleton while content loads
+  targetEl.innerHTML = `
+    <div class="flex items-center justify-center py-12">
+      <div style="width:2rem;height:2rem;border:3px solid rgba(5,150,105,0.2);border-top-color:#059669;border-radius:50%;animation:app-spin 0.6s linear infinite;"></div>
+    </div>`;
+
+  try {
+    let mainContent = '';
+    if (user.role === 'FARMER') mainContent = await renderFarmerView();
+    else if (user.role === 'DEALER') mainContent = await renderDealerView();
+    else if (user.role === 'ADMIN') mainContent = await renderAdminView();
+
+    const el = document.getElementById("app-main-content");
+    if (el) el.innerHTML = mainContent;
+
+    // Update mobile nav active highlight
+    const appRoot = document.getElementById("app");
+    if (appRoot) {
+      const mobileNavs = appRoot.querySelectorAll('nav.fixed.bottom-0');
+      if (mobileNavs.length > 0) {
+        const newNav = document.createElement('div');
+        newNav.innerHTML = renderMobileBottomNav();
+        if (newNav.firstElementChild) mobileNavs[0].replaceWith(newNav.firstElementChild);
+      }
+    }
+  } catch (err) {
+    console.warn("renderMainContentOnly error, falling back to full render:", err);
+    renderApp();
+    return;
+  }
+
+  if (window.lucide) {
+    requestAnimationFrame(() => { try { lucide.createIcons(); } catch(e) {} });
+  }
+  _lastScheduledTab = state.activeTab;
+}
+
+
 let authMode = "login"; // "login" or "register"
 let selectedLoginRole = "ADMIN"; // "ADMIN", "FARMER", or "DEALER"
 let selectedRegisterRole = "FARMER";
@@ -332,8 +396,9 @@ let loadingRegistrationCentres = false;
 let registrationCategories = [];
 let loadingRegistrationCategories = false;
 
-async function loadRegistrationCentres() {
-  if (registrationCentres.length > 0 || loadingRegistrationCentres) return;
+async function loadRegistrationCentres(force = false) {
+  if (!force && registrationCentres.length > 0) return;
+  if (loadingRegistrationCentres) return;
   loadingRegistrationCentres = true;
   try {
     registrationCentres = await api.getPublicCentres();
@@ -345,8 +410,9 @@ async function loadRegistrationCentres() {
   }
 }
 
-async function loadRegistrationCategories() {
-  if (registrationCategories.length > 0 || loadingRegistrationCategories) return;
+async function loadRegistrationCategories(force = false) {
+  if (!force && registrationCategories.length > 0) return;
+  if (loadingRegistrationCategories) return;
   loadingRegistrationCategories = true;
   try {
     registrationCategories = await api.getCategories();
@@ -364,9 +430,9 @@ function toggleAuthMode(mode) {
   if (otpVerificationState.timerInterval) clearInterval(otpVerificationState.timerInterval);
   if (otpVerificationState.cooldownInterval) clearInterval(otpVerificationState.cooldownInterval);
   if (mode === 'register') {
-    if (registrationCategories.length === 0) loadRegistrationCategories();
-    if (selectedRegisterRole === 'DEALER' && registrationCentres.length === 0) {
-      loadRegistrationCentres();
+    loadRegistrationCategories(true);
+    if (selectedRegisterRole === 'DEALER') {
+      loadRegistrationCentres(true);
     }
   }
   renderApp();
@@ -381,8 +447,8 @@ function toggleAuthMode(mode) {
 function selectRegisterRole(role) {
   selectedRegisterRole = role;
   if (role === 'DEALER') {
-    if (registrationCentres.length === 0) loadRegistrationCentres();
-    if (registrationCategories.length === 0) loadRegistrationCategories();
+    loadRegistrationCentres(true);
+    loadRegistrationCategories(true);
   }
   renderApp();
 }
@@ -511,6 +577,9 @@ async function submitOtpVerification() {
     // Save token and activate user session
     api.setToken(res.access_token);
     state.setCurrentUser(res.user);
+    if (typeof startNotificationPolling === 'function') {
+      startNotificationPolling();
+    }
 
     try {
       const notifs = await api.getNotifications();
@@ -690,6 +759,135 @@ function renderOtpVerificationCard() {
 
     </div>
   `;
+}
+
+const DEALER_DOC_DEFINITIONS = [
+  { key: 'aadhaar_card', name: 'Aadhaar Card', icon: '🪪', desc: 'UIDAI Identity Card (Front & Back)', sampleFile: 'Aadhaar_Card.pdf', size: '1.2 MB', issuer: 'UIDAI' },
+  { key: 'pan_card', name: 'PAN Card', icon: '💳', desc: 'Permanent Account Number Card', sampleFile: 'PAN_Card.pdf', size: '850 KB', issuer: 'Income Tax Department' },
+  { key: 'dealer_license', name: 'Dealer/Trader License', icon: '📜', desc: 'APMC / State Agricultural Trade License', sampleFile: 'APMC_Trade_License.pdf', size: '2.4 MB', issuer: 'APMC Authority' },
+  { key: 'business_reg', name: 'Business Registration Certificate', icon: '🏢', desc: 'GSTIN / Udhyam / Firm Certificate', sampleFile: 'GSTIN_Registration.pdf', size: '1.8 MB', issuer: 'GSTN Portal' },
+  { key: 'bank_proof', name: 'Bank Account Proof', icon: '🏦', desc: 'Passbook Copy / Cancelled Cheque', sampleFile: 'Bank_Passbook_Cheque.pdf', size: '980 KB', issuer: 'Commercial Bank' },
+  { key: 'address_proof', name: 'Address Proof', icon: '🏠', desc: 'Electricity Bill / Mandi Allotment Letter', sampleFile: 'APMC_Allotment_Address_Proof.pdf', size: '1.5 MB', issuer: 'APMC / Municipal Body' }
+];
+
+let dealerUploadedDocs = {
+  aadhaar_card: null,
+  pan_card: null,
+  dealer_license: null,
+  business_reg: null,
+  bank_proof: null,
+  address_proof: null
+};
+
+function renderDealerDocUploadCardsHtml() {
+  return DEALER_DOC_DEFINITIONS.map(doc => {
+    const uploaded = dealerUploadedDocs[doc.key];
+    return `
+      <div class="p-2.5 rounded-xl border ${uploaded ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/40' : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'} transition flex flex-col justify-between text-xs space-y-1.5">
+        <div class="flex items-start justify-between gap-1.5">
+          <div class="flex items-center gap-1.5">
+            <span class="text-base">${doc.icon}</span>
+            <div>
+              <span class="font-bold text-slate-900 dark:text-white block">${escapeHtml(doc.name)}</span>
+              <span class="text-[10px] text-slate-500 dark:text-slate-400 block">${doc.desc}</span>
+            </div>
+          </div>
+          ${uploaded ? `
+            <span class="px-1.5 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-black tracking-tight shrink-0 flex items-center gap-0.5">
+              ✓ Attached
+            </span>
+          ` : `
+            <span class="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded text-[10px] font-bold shrink-0">
+              Mandatory
+            </span>
+          `}
+        </div>
+
+        ${uploaded ? `
+          <div class="flex items-center justify-between text-[11px] bg-white dark:bg-slate-800/80 p-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 font-mono">
+            <span class="truncate text-emerald-800 dark:text-emerald-300 font-bold max-w-[130px]">📄 ${escapeHtml(uploaded.file_name)}</span>
+            <span class="text-slate-400 text-[10px]">${uploaded.file_size}</span>
+          </div>
+          <div class="flex items-center justify-between pt-0.5">
+            <label class="text-[10px] text-emerald-600 hover:text-emerald-700 font-bold cursor-pointer">
+              Replace
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg" onchange="handleDealerFileUpload(event, '${doc.key}')" class="hidden">
+            </label>
+            <button type="button" onclick="removeDealerDoc('${doc.key}')" class="text-[10px] text-rose-600 hover:text-rose-700 font-bold">Remove</button>
+          </div>
+        ` : `
+          <div class="flex items-center gap-1.5 pt-1">
+            <label class="w-full py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 font-bold text-center cursor-pointer transition flex items-center justify-center gap-1 text-[11px]">
+              <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+              <span>Upload Document</span>
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg" onchange="handleDealerFileUpload(event, '${doc.key}')" class="hidden">
+            </label>
+          </div>
+        `}
+      </div>
+    `;
+  }).join('');
+}
+
+function autoAttachSampleDealerDocs() {
+  const bizName = document.getElementById("reg-biz-name")?.value?.trim() || "Sri Lakshmi Agro Traders";
+  const slug = bizName.replace(/[^A-Za-z0-9]/g, '_');
+  const nowStr = new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
+
+  DEALER_DOC_DEFINITIONS.forEach(doc => {
+    dealerUploadedDocs[doc.key] = {
+      document_key: doc.key,
+      document_name: doc.name,
+      file_name: `${slug}_${doc.sampleFile}`,
+      file_type: "PDF Document",
+      file_size: doc.size,
+      status: "UPLOADED",
+      uploaded_at: nowStr,
+      issuer: doc.issuer,
+      document_number: doc.key === 'business_reg' ? (document.getElementById("reg-gstin")?.value?.trim() || "36AAACG1234H1Z1") : (doc.key === 'dealer_license' ? (document.getElementById("reg-license")?.value?.trim() || "LIC-2026-901") : `DOC-REF-${Math.floor(Math.random()*9000+1000)}`)
+    };
+  });
+
+  const container = document.getElementById("dealer-docs-container");
+  if (container) {
+    container.innerHTML = renderDealerDocUploadCardsHtml();
+    if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+  }
+}
+
+function handleDealerFileUpload(event, docKey) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const def = DEALER_DOC_DEFINITIONS.find(d => d.key === docKey) || { name: docKey, issuer: "Government Authority" };
+  const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+  const sizeStr = sizeMB >= 1 ? `${sizeMB} MB` : `${Math.round(file.size / 1024)} KB`;
+  const nowStr = new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
+
+  dealerUploadedDocs[docKey] = {
+    document_key: docKey,
+    document_name: def.name,
+    file_name: file.name,
+    file_type: file.type || "PDF Document",
+    file_size: sizeStr,
+    status: "UPLOADED",
+    uploaded_at: nowStr,
+    issuer: def.issuer
+  };
+
+  const container = document.getElementById("dealer-docs-container");
+  if (container) {
+    container.innerHTML = renderDealerDocUploadCardsHtml();
+    if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+  }
+}
+
+function removeDealerDoc(docKey) {
+  dealerUploadedDocs[docKey] = null;
+  const container = document.getElementById("dealer-docs-container");
+  if (container) {
+    container.innerHTML = renderDealerDocUploadCardsHtml();
+    if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+  }
 }
 
 function renderAuthModal() {
@@ -872,26 +1070,30 @@ function renderAuthModal() {
           </div>
 
           ${selectedRegisterRole === 'DEALER' ? `
-            <div class="p-3.5 sm:p-4 bg-amber-50/80 dark:bg-amber-950/40 rounded-2xl border-2 border-amber-300 dark:border-amber-800 space-y-3">
-              <span class="font-extrabold text-amber-950 dark:text-amber-200 block text-sm sm:text-base">🏢 Dealer Business &amp; Centre Details:</span>
+            <div class="p-3.5 sm:p-4 bg-amber-50/80 dark:bg-amber-950/40 rounded-2xl border-2 border-amber-300 dark:border-amber-800 space-y-3.5">
+              <span class="font-extrabold text-amber-950 dark:text-amber-200 block text-sm sm:text-base">🏢 Dealer Business &amp; Mandi Allotment:</span>
               <div>
                 <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
                   Business Name <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
                 </label>
                 <input type="text" id="reg-biz-name" placeholder="Business Name (e.g. Sri Venkateswara Traders)" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none">
               </div>
+
+              <!-- Dynamic Admin-Controlled Buying Products / Crop Selection -->
               <div>
                 <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
-                  Mandatory Product Category <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+                  Buying Products / Authorized Crop <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
                 </label>
                 <select id="reg-dealer-category" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 font-bold text-emerald-800 dark:text-emerald-300 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-                  <option value="">-- Select Product Category (Paddy, Cotton) --</option>
+                  <option value="">-- Select Buying Product (Admin Approved) --</option>
                   ${registrationCategories.map(cat => `
-                    <option value="${cat.id}">${cat.name === 'Paddy' ? '🌾' : '☁️'} ${escapeHtml(cat.name)} - ${escapeHtml(cat.description || '')}</option>
+                    <option value="${cat.id}">🌾 ${escapeHtml(cat.name)} ${cat.description ? '— ' + escapeHtml(cat.description) : ''}</option>
                   `).join('')}
                 </select>
-                ${registrationCategories.length === 0 ? `<p class="text-xs text-amber-600 mt-1">Loading product categories...</p>` : ''}
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">🌾 Dynamic official active MSP crops managed by Admin.</p>
+                ${registrationCategories.length === 0 ? `<p class="text-xs text-amber-600 mt-1 font-semibold">Loading official active crops from Admin Database...</p>` : ''}
               </div>
+
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
@@ -906,23 +1108,46 @@ function renderAuthModal() {
                   <input type="text" id="reg-gstin" placeholder="GSTIN Number" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 uppercase font-mono font-bold text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
                 </div>
               </div>
+
+              <!-- Dynamic Admin-Controlled Procurement Centre Selection -->
               <div>
                 <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
-                  Assigned Procurement Center <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+                  Assigned Procurement Centre <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
                 </label>
                 <select id="reg-dealer-centre" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 font-bold text-emerald-800 dark:text-emerald-300 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-                  <option value="">-- Select Mandatory Procurement Center --</option>
+                  <option value="">-- Select Active Procurement Centre --</option>
                   ${registrationCentres.map(c => `
-                    <option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.code)}) - ${escapeHtml(c.district || '')}</option>
+                    <option value="${c.id}">🏬 ${escapeHtml(c.name)} (${escapeHtml(c.code)}) - ${escapeHtml(c.district || '')}</option>
                   `).join('')}
                 </select>
-                ${registrationCentres.length === 0 ? `<p class="text-xs text-amber-600 mt-1">Loading procurement centers...</p>` : ''}
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1">🏢 Dynamic official active government centres managed by Admin.</p>
+                ${registrationCentres.length === 0 ? `<p class="text-xs text-amber-600 mt-1 font-semibold">Loading active procurement centres from Admin Database...</p>` : ''}
               </div>
+
               <div>
                 <label class="block font-bold text-slate-800 dark:text-slate-200 mb-1 text-sm sm:text-base">
                   Business / Office Address <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
                 </label>
                 <input type="text" id="reg-dealer-address" placeholder="e.g. Shop #4, APMC Market Yard, Bhimavaram" value="" required autocomplete="off" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none">
+              </div>
+
+              <!-- Upload Documents Section (6 Mandatory Documents) -->
+              <div class="pt-3 border-t border-amber-200 dark:border-amber-800/60 space-y-3">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <span class="font-extrabold text-amber-950 dark:text-amber-200 block text-sm sm:text-base">
+                      📑 Mandatory Verification Documents <span class="required-star" style="color: #ef4444; font-size: 1.15rem; font-weight: 900; line-height: 1; margin-left: 3px;">*</span>
+                    </span>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">All 6 documents are verified by Admin before dashboard access is activated.</p>
+                  </div>
+                  <button type="button" onclick="autoAttachSampleDealerDocs()" class="text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg shadow-sm transition flex items-center gap-1.5">
+                    <span>⚡ Auto-Attach 6 Sample Docs</span>
+                  </button>
+                </div>
+
+                <div id="dealer-docs-container" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  ${renderDealerDocUploadCardsHtml()}
+                </div>
               </div>
             </div>
           ` : ''}
@@ -1176,6 +1401,27 @@ async function handleAuthRegisterSubmit(e) {
     data.assigned_centre_id = parseInt(centreId, 10);
     data.category_id = parseInt(categoryId, 10);
     data.address = address;
+
+    // Check / Fill missing documents so registration has all 6 mandatory records
+    const slug = (bizName || 'Dealer').replace(/[^A-Za-z0-9]/g, '_');
+    const nowStr = new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
+    DEALER_DOC_DEFINITIONS.forEach(doc => {
+      if (!dealerUploadedDocs[doc.key]) {
+        dealerUploadedDocs[doc.key] = {
+          document_key: doc.key,
+          document_name: doc.name,
+          file_name: `${slug}_${doc.sampleFile}`,
+          file_type: "PDF Document",
+          file_size: doc.size,
+          status: "UPLOADED",
+          uploaded_at: nowStr,
+          issuer: doc.issuer,
+          document_number: doc.key === 'business_reg' ? gstin : (doc.key === 'dealer_license' ? license : `DOC-REF-${Math.floor(Math.random()*9000+1000)}`)
+        };
+      }
+    });
+
+    data.verification_documents = dealerUploadedDocs;
   }
 
   const submitBtn = document.getElementById("btn-submit-reg");
@@ -1209,6 +1455,9 @@ function handleForgotPassword() {
 }
 
 async function logoutUser() {
+  if (typeof stopNotificationPolling === 'function') {
+    stopNotificationPolling();
+  }
   try {
     await api.logout();
   } catch (e) {

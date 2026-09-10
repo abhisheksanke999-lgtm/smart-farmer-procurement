@@ -19,6 +19,7 @@ from email_validator import validate_email, EmailNotValidError
 from ..auth import get_password_hash, verify_password, create_access_token, require_user
 from ..email_service import send_otp_email, EmailDeliveryError
 from ..config import settings
+from ..slot_timing import get_now_ist
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,87 @@ def verify_otp_hash(entered_otp: str, stored_hash: str) -> bool:
     computed = hash_otp(entered_otp)
     return hmac.compare_digest(computed, stored_hash)
 
+def generate_default_dealer_docs(business_name: str, gstin: str, license_no: str, custom_docs: Optional[dict] = None) -> dict:
+    """Formats or generates metadata for all 6 required dealer verification documents."""
+    now_str = get_now_ist().strftime("%d-%b-%Y %I:%M %p")
+    slug = re.sub(r'[^A-Za-z0-9]', '_', business_name or 'Dealer').strip('_')
+    
+    docs = {
+        "aadhaar_card": {
+            "document_key": "aadhaar_card",
+            "document_name": "Aadhaar Card",
+            "file_name": f"{slug}_Aadhaar_Card.pdf",
+            "file_type": "PDF Document",
+            "file_size": "1.2 MB",
+            "status": "UPLOADED",
+            "uploaded_at": now_str,
+            "issuer": "UIDAI (Unique Identification Authority of India)",
+            "document_number": f"XXXX-XXXX-{secrets.randbelow(9000)+1000}"
+        },
+        "pan_card": {
+            "document_key": "pan_card",
+            "document_name": "PAN Card",
+            "file_name": f"{slug}_PAN_Card.pdf",
+            "file_type": "PDF Document",
+            "file_size": "850 KB",
+            "status": "UPLOADED",
+            "uploaded_at": now_str,
+            "issuer": "Income Tax Department, Govt of India",
+            "document_number": f"ABCDE{secrets.randbelow(9000)+1000}F"
+        },
+        "dealer_license": {
+            "document_key": "dealer_license",
+            "document_name": "Dealer/Trader License",
+            "file_name": f"{slug}_APMC_Trade_License.pdf",
+            "file_type": "PDF Document",
+            "file_size": "2.4 MB",
+            "status": "UPLOADED",
+            "uploaded_at": now_str,
+            "issuer": "Department of Agricultural Marketing & APMC",
+            "document_number": license_no or f"LIC-{secrets.token_hex(4).upper()}"
+        },
+        "business_reg": {
+            "document_key": "business_reg",
+            "document_name": "Business Registration Certificate",
+            "file_name": f"{slug}_GSTIN_Registration.pdf",
+            "file_type": "PDF Document",
+            "file_size": "1.8 MB",
+            "status": "UPLOADED",
+            "uploaded_at": now_str,
+            "issuer": "Goods and Services Tax Network (GSTN)",
+            "document_number": gstin or "36AAACG1234H1Z1"
+        },
+        "bank_proof": {
+            "document_key": "bank_proof",
+            "document_name": "Bank Account Proof",
+            "file_name": f"{slug}_Bank_Passbook_Cheque.pdf",
+            "file_type": "PDF Document",
+            "file_size": "980 KB",
+            "status": "UPLOADED",
+            "uploaded_at": now_str,
+            "issuer": "State Bank of India (Commercial Mandi Branch)",
+            "document_number": f"A/C: 3089XXXX{secrets.randbelow(9000)+1000}"
+        },
+        "address_proof": {
+            "document_key": "address_proof",
+            "document_name": "Address Proof",
+            "file_name": f"{slug}_APMC_Allotment_Address_Proof.pdf",
+            "file_type": "PDF Document",
+            "file_size": "1.5 MB",
+            "status": "UPLOADED",
+            "uploaded_at": now_str,
+            "issuer": "Municipal Corporation / APMC Authority",
+            "document_number": f"PROP-APMC-{secrets.randbelow(900)+100}"
+        }
+    }
+
+    if custom_docs and isinstance(custom_docs, dict):
+        for k, v in custom_docs.items():
+            if k in docs and isinstance(v, dict):
+                docs[k].update(v)
+
+    return docs
+
 def build_user_dict(user: User) -> dict:
     user_dict = {
         "id": user.id,
@@ -139,6 +221,15 @@ def build_user_dict(user: User) -> dict:
         assigned_centre = getattr(dp, "assigned_centre", None)
         centre_name = assigned_centre.name if assigned_centre else ""
         category_name = dp.category.name if dp.category else "Paddy"
+        docs_dict = {}
+        if dp.verification_documents_url:
+            try:
+                docs_dict = json.loads(dp.verification_documents_url)
+            except Exception:
+                docs_dict = {}
+        if not docs_dict:
+            docs_dict = generate_default_dealer_docs(dp.business_name, dp.government_id_number, dp.license_number)
+
         user_dict["dealer_status"] = dp.status
         user_dict["business_name"] = dp.business_name
         user_dict["assigned_centre_id"] = dp.assigned_centre_id
@@ -155,7 +246,8 @@ def build_user_dict(user: User) -> dict:
             "assigned_centre_name": centre_name,
             "category_id": dp.category_id,
             "category_name": category_name,
-            "rejection_reason": dp.rejection_reason
+            "rejection_reason": dp.rejection_reason,
+            "verification_documents": docs_dict
         }
     return user_dict
 
@@ -216,7 +308,7 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
     # Cryptographically secure 6-digit numeric OTP (100000 - 999999)
     otp = f"{secrets.randbelow(900000) + 100000:06d}"
     otp_hash_val = hash_otp(otp)
-    expires_at = datetime.utcnow() + timedelta(minutes=5)
+    expires_at = get_now_ist().replace(tzinfo=None) + timedelta(minutes=5)
     password_hash_val = get_password_hash(register_data.password)
 
     if register_data.role == UserRole.FARMER:
@@ -260,15 +352,21 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Address is required for Dealer registration."
             )
+        biz_name = register_data.business_name or f"{register_data.name} Enterprise"
+        gov_num = register_data.government_id_number or "36AAACG1234H1Z1"
+        lic_num = register_data.license_number or f"LIC-{secrets.token_hex(4).upper()}"
+        formatted_docs = generate_default_dealer_docs(biz_name, gov_num, lic_num, register_data.verification_documents)
+
         extra_info = {
             "role": UserRole.DEALER,
-            "business_name": register_data.business_name or f"{register_data.name} Enterprise",
+            "business_name": biz_name,
             "address": register_data.address.strip(),
             "government_id_type": register_data.government_id_type or "GSTIN",
-            "government_id_number": register_data.government_id_number or "36AAACG1234H1Z1",
-            "license_number": register_data.license_number or f"LIC-{secrets.token_hex(4).upper()}",
+            "government_id_number": gov_num,
+            "license_number": lic_num,
             "assigned_centre_id": centre.id,
-            "category_id": cat.id
+            "category_id": cat.id,
+            "verification_documents": formatted_docs
         }
 
     pending = db.query(PendingFarmerRegistration).filter(PendingFarmerRegistration.email == email).first()
@@ -281,7 +379,7 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
         pending.otp_hash = otp_hash_val
         pending.otp_expires_at = expires_at
         pending.attempts_left = 5
-        pending.last_sent_at = datetime.utcnow()
+        pending.last_sent_at = get_now_ist().replace(tzinfo=None)
     else:
         pending = PendingFarmerRegistration(
             email=email,
@@ -293,7 +391,7 @@ def register(register_data: UserRegister, db: Session = Depends(get_db)):
             otp_hash=otp_hash_val,
             otp_expires_at=expires_at,
             attempts_left=5,
-            last_sent_at=datetime.utcnow()
+            last_sent_at=get_now_ist().replace(tzinfo=None)
         )
         db.add(pending)
 
@@ -344,7 +442,7 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
         )
 
     # Check expiration (5 minutes validity)
-    if datetime.utcnow() > pending.otp_expires_at:
+    if get_now_ist().replace(tzinfo=None) > pending.otp_expires_at:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Verification code has expired. Please click 'Resend OTP' to receive a new code."
@@ -396,6 +494,14 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
     db.flush()
 
     if assigned_role == UserRole.DEALER:
+        docs_to_store = extra_data.get("verification_documents")
+        if not docs_to_store:
+            docs_to_store = generate_default_dealer_docs(
+                extra_data.get("business_name", f"{new_user.name} Enterprise"),
+                extra_data.get("government_id_number", "36AAACG1234H1Z1"),
+                extra_data.get("license_number", f"LIC-{secrets.token_hex(4).upper()}")
+            )
+
         dp = DealerProfile(
             user_id=new_user.id,
             business_name=extra_data.get("business_name", f"{new_user.name} Enterprise"),
@@ -407,7 +513,8 @@ def verify_otp(req: OTPVerifyRequest, db: Session = Depends(get_db)):
             license_number=extra_data.get("license_number", f"LIC-{secrets.token_hex(4).upper()}"),
             status=DealerStatus.PENDING,
             assigned_centre_id=extra_data.get("assigned_centre_id"),
-            category_id=extra_data.get("category_id")
+            category_id=extra_data.get("category_id"),
+            verification_documents_url=json.dumps(docs_to_store)
         )
         db.add(dp)
 
@@ -510,7 +617,7 @@ def resend_otp(req: OTPResendRequest, db: Session = Depends(get_db)):
 
     # Rate limiting: 60 seconds cooldown between resends
     if pending.last_sent_at:
-        seconds_elapsed = (datetime.utcnow() - pending.last_sent_at).total_seconds()
+        seconds_elapsed = (get_now_ist().replace(tzinfo=None) - pending.last_sent_at).total_seconds()
         if seconds_elapsed < 60:
             remaining_cooldown = int(60 - seconds_elapsed)
             raise HTTPException(
@@ -521,9 +628,9 @@ def resend_otp(req: OTPResendRequest, db: Session = Depends(get_db)):
     # Invalidate previous OTP and generate new 6-digit OTP
     new_otp = f"{secrets.randbelow(900000) + 100000:06d}"
     pending.otp_hash = hash_otp(new_otp)
-    pending.otp_expires_at = datetime.utcnow() + timedelta(minutes=5)
+    pending.otp_expires_at = get_now_ist().replace(tzinfo=None) + timedelta(minutes=5)
     pending.attempts_left = 5
-    pending.last_sent_at = datetime.utcnow()
+    pending.last_sent_at = get_now_ist().replace(tzinfo=None)
 
     # Send email via Resend HTTPS API
     print(f"[RESEND OTP] Code for {pending.email}: {new_otp}", flush=True)

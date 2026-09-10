@@ -116,7 +116,7 @@ async function renderAdminView() {
           </div>
         </div>
 
-        <!-- 6 Primary Executive Button Cards (Direct Access to Key Sections) -->
+        <!-- 6 Primary Executive Button Cards -->
         ${renderAdminMetricCardsBar('dashboard')}
       `;
       contentHtml = await renderAdminDashboardHome();
@@ -134,6 +134,7 @@ async function renderAdminView() {
         ${renderDealerDetailsModalHtml()}
         ${renderCentreDetailsModalHtml()}
         ${renderMspRateEditModalHtml()}
+        ${renderAdminDocModalHtml()}
       </div>
     `;
   } catch (err) {
@@ -180,9 +181,9 @@ function renderAdminMetricCardsBar(activeTab) {
       label: 'Registered Farmers',
       icon: '👨‍🌾',
       value: s.total_farmers || 0,
-      sub: `<span class="text-emerald-600 font-bold">🟢 ${s.active_farmers || (s.total_farmers || 0)} Active</span> <span class="text-slate-400">•</span> <span class="text-rose-500 font-semibold">🔴 ${s.inactive_farmers || 0} Inactive</span>`,
+      sub: `<span class="text-emerald-700 dark:text-emerald-400 font-bold">🟢 ${s.active_farmers || (s.total_farmers || 0)} Active</span> <span class="text-slate-400">•</span> <span class="text-rose-600 dark:text-rose-400 font-semibold">🔴 ${s.inactive_farmers || 0} Inactive</span>`,
       borderColor: 'border-emerald-500',
-      activeRing: 'ring-2 ring-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/40'
+      activeRing: 'ring-4 ring-emerald-500/60 bg-gradient-to-br from-emerald-100/90 via-emerald-50/40 to-white dark:from-emerald-950/80 dark:via-emerald-900/40 dark:to-slate-900 border-2 border-emerald-500 shadow-xl scale-[1.03] z-10'
     },
     {
       id: 'approvals',
@@ -190,18 +191,18 @@ function renderAdminMetricCardsBar(activeTab) {
       icon: '🏢',
       value: s.total_dealers || 0,
       badge: (s.pending_dealers || 0) > 0 ? `${s.pending_dealers} New` : null,
-      sub: `<span class="text-emerald-600 font-bold">🟢 ${s.active_dealers || s.approved_dealers || 0} Active</span> <span class="text-slate-400">•</span> <span class="text-amber-600 font-semibold">⏳ ${s.pending_dealers || 0} Pending</span>`,
+      sub: `<span class="text-emerald-700 dark:text-emerald-400 font-bold">🟢 ${s.active_dealers || s.approved_dealers || 0} Active</span> <span class="text-slate-400">•</span> <span class="text-amber-700 dark:text-amber-400 font-semibold">⏳ ${s.pending_dealers || 0} Pending</span>`,
       borderColor: 'border-amber-500',
-      activeRing: 'ring-2 ring-amber-500 bg-amber-50/50 dark:bg-amber-950/40'
+      activeRing: 'ring-4 ring-amber-500/60 bg-gradient-to-br from-amber-100/90 via-amber-50/40 to-white dark:from-amber-950/80 dark:via-amber-900/40 dark:to-slate-900 border-2 border-amber-500 shadow-xl scale-[1.03] z-10'
     },
     {
       id: 'centres',
       label: 'Procurement Centres',
       icon: '🏬',
       value: totalCentres,
-      sub: `<span class="text-emerald-600 font-bold">🟢 ${activeCentres} Active</span> <span class="text-slate-400">•</span> <span class="text-blue-600 font-semibold">${(s.total_procurement_quantity_quintals || 0).toLocaleString('en-IN')} Q Procured</span>`,
+      sub: `<span class="text-emerald-700 dark:text-emerald-400 font-bold">🟢 ${activeCentres} Active</span> <span class="text-slate-400">•</span> <span class="text-blue-700 dark:text-blue-400 font-semibold">${(s.total_procurement_quantity_quintals || 0).toLocaleString('en-IN')} Q</span>`,
       borderColor: 'border-blue-500',
-      activeRing: 'ring-2 ring-blue-500 bg-blue-50/50 dark:bg-blue-950/40'
+      activeRing: 'ring-4 ring-blue-500/60 bg-gradient-to-br from-blue-100/90 via-blue-50/40 to-white dark:from-blue-950/80 dark:via-blue-900/40 dark:to-slate-900 border-2 border-blue-500 shadow-xl scale-[1.03] z-10'
     },
     {
       id: 'analytics',
@@ -209,27 +210,27 @@ function renderAdminMetricCardsBar(activeTab) {
       icon: '📊',
       value: `${((s.total_procurement_quantity_quintals || 3656.55) / 10).toFixed(0)} MT`,
       badge: 'Live',
-      sub: `<span class="text-indigo-600 font-bold">Volume & Crop Share</span> <span class="text-slate-400">•</span> <span class="text-emerald-600 font-semibold">Turnaround</span>`,
+      sub: `<span class="text-indigo-700 dark:text-indigo-400 font-bold">Crop Share</span> <span class="text-slate-400">•</span> <span class="text-emerald-700 dark:text-emerald-400 font-semibold">Turnaround</span>`,
       borderColor: 'border-indigo-500',
-      activeRing: 'ring-2 ring-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40'
+      activeRing: 'ring-4 ring-indigo-500/60 bg-gradient-to-br from-indigo-100/90 via-indigo-50/40 to-white dark:from-indigo-950/80 dark:via-indigo-900/40 dark:to-slate-900 border-2 border-indigo-500 shadow-xl scale-[1.03] z-10'
     },
     {
       id: 'msp_rates',
       label: 'Crop Rates / MSP',
       icon: '🌾',
       value: '2026-27',
-      sub: `<span class="text-amber-600 font-bold">Official Gov MSP</span> <span class="text-slate-400">•</span> <span class="text-emerald-600 font-semibold">Rate Cards</span>`,
+      sub: `<span class="text-amber-700 dark:text-amber-400 font-bold">Official MSP</span> <span class="text-slate-400">•</span> <span class="text-emerald-700 dark:text-emerald-400 font-semibold">Rate Cards</span>`,
       borderColor: 'border-amber-600',
-      activeRing: 'ring-2 ring-amber-600 bg-amber-50/50 dark:bg-amber-950/40'
+      activeRing: 'ring-4 ring-amber-600/60 bg-gradient-to-br from-amber-100/90 via-amber-50/40 to-white dark:from-amber-950/80 dark:via-amber-900/40 dark:to-slate-900 border-2 border-amber-600 shadow-xl scale-[1.03] z-10'
     },
     {
       id: 'admin_payments',
       label: 'DBT Payouts',
       icon: '💳',
       value: s.pending_payments_count || 0,
-      sub: `<span class="text-purple-600 font-bold">Pending: ₹${((s.pending_payments_value || 0) / 100000).toFixed(2)} L</span>`,
+      sub: `<span class="text-purple-700 dark:text-purple-400 font-bold">Pending: ₹${((s.pending_payments_value || 0) / 100000).toFixed(2)} L</span>`,
       borderColor: 'border-purple-500',
-      activeRing: 'ring-2 ring-purple-500 bg-purple-50/50 dark:bg-purple-950/40'
+      activeRing: 'ring-4 ring-purple-500/60 bg-gradient-to-br from-purple-100/90 via-purple-50/40 to-white dark:from-purple-950/80 dark:via-purple-900/40 dark:to-slate-900 border-2 border-purple-500 shadow-xl scale-[1.03] z-10'
     }
   ];
 
@@ -241,22 +242,24 @@ function renderAdminMetricCardsBar(activeTab) {
           const isActive = (activeTab === c.id) || (c.id === 'approvals' && activeTab === 'dealers');
           return `
             <button onclick="state.setActiveTab('${c.id}')"
-                    class="glass-card p-4 border-l-4 ${c.borderColor} text-left cursor-pointer hover:shadow-lg transition-all duration-200 group relative ${
-                      isActive ? `${c.activeRing} shadow-md` : 'hover:scale-[1.01]'
+                    class="glass-card p-4 border-l-4 ${c.borderColor} text-left cursor-pointer hover:shadow-xl transition-all duration-200 group relative ${
+                      isActive ? `${c.activeRing}` : 'hover:scale-[1.02] border-slate-200 dark:border-slate-800'
                     }">
               <div class="flex items-center justify-between">
-                <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight flex items-center gap-1">
+                <span class="text-[11px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-tight flex items-center gap-1">
                   <span>${c.icon}</span>
                   <span class="truncate">${c.label}</span>
                 </span>
                 ${c.badge ? `
-                  <span class="px-1.5 py-0.5 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full ${c.badge === 'Live' ? 'animate-pulse' : ''}">${c.badge}</span>
+                  <span class="px-2 py-0.5 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full shadow-sm ${c.badge === 'Live' ? 'animate-pulse' : ''}">${c.badge}</span>
+                ` : (isActive ? `
+                  <span class="px-1.5 py-0.2 rounded-full bg-emerald-500 text-slate-950 text-[9px] font-black uppercase">Active</span>
                 ` : `
                   <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500 transition"></i>
-                `}
+                `)}
               </div>
-              <h3 class="text-xl font-black text-slate-900 dark:text-white font-mono mt-1 truncate">${c.value}</h3>
-              <div class="flex items-center gap-1.5 mt-1 text-[10px] truncate">
+              <h3 class="text-xl font-black text-slate-900 dark:text-white font-mono mt-1.5 truncate">${c.value}</h3>
+              <div class="flex items-center gap-1.5 mt-1.5 text-[10px] truncate">
                 ${c.sub}
               </div>
             </button>
@@ -265,13 +268,16 @@ function renderAdminMetricCardsBar(activeTab) {
       </div>
 
       ${activeTab && activeTab !== 'dashboard' && activeTab !== 'home' ? `
-        <div class="flex items-center justify-between bg-slate-100 dark:bg-slate-800/80 px-4 py-2.5 rounded-xl text-xs border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div class="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-            <span class="font-extrabold text-emerald-600 uppercase tracking-wider">Active Section:</span>
-            <span class="font-bold capitalize">${activeTab === 'approvals' ? 'Registered Dealers' : (activeTab === 'msp_rates' ? 'Crop Rates / MSP Management' : (activeTab === 'analytics' ? 'Reports & Analytics' : activeTab.replace('_', ' ')))}</span>
+        <div class="flex items-center justify-between bg-emerald-50 dark:bg-emerald-950/40 px-4 py-2.5 rounded-xl text-xs border border-emerald-300 dark:border-emerald-800 shadow-sm">
+          <div class="flex items-center gap-2 text-emerald-950 dark:text-emerald-100">
+            <span class="font-extrabold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Active Section:
+            </span>
+            <span class="font-black text-slate-900 dark:text-white capitalize">${activeTab === 'approvals' || activeTab === 'dealers' ? 'Registered Dealers' : (activeTab === 'msp_rates' ? 'Crop Rates / MSP Management' : (activeTab === 'analytics' ? 'Reports & Analytics' : activeTab.replace('_', ' ')))}</span>
           </div>
           <button onclick="state.setActiveTab('dashboard')"
-                  class="px-3 py-1.5 bg-white dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 rounded-lg font-bold border border-slate-200 dark:border-slate-600 shadow-sm transition flex items-center gap-1.5">
+                  class="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg font-extrabold border border-emerald-300 dark:border-emerald-700 shadow-sm transition flex items-center gap-1.5 cursor-pointer hover:scale-105 active:scale-95">
             <i data-lucide="layout-dashboard" class="w-3.5 h-3.5 text-emerald-600"></i>
             <span>Executive Dashboard Overview</span>
           </button>
@@ -541,24 +547,25 @@ async function renderAdminCentresPage() {
         </div>
       </div>
 
-      <!-- Search & Filter Controls -->
-      <div class="glass-card p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <!-- Search & Filter Controls (Highlighted Border) -->
+      <div class="glass-card p-4 rounded-2xl border-2 border-blue-500/50 dark:border-blue-500/40 bg-white/90 dark:bg-slate-900/90 shadow-md ring-2 ring-blue-500/15 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div class="relative w-full sm:w-96">
-          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+          <i data-lucide="search" class="w-4 h-4 text-blue-600 dark:text-blue-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
           <input type="text"
                  id="admin-centre-search-input"
                  value="${escapeHtml(adminCentreSearchQuery)}"
                  oninput="handleAdminCentreSearch(this.value)"
                  placeholder="Search by Centre Name, Code (e.g. WGL-01), Location, District, Phone..."
-                 class="w-full pl-9 pr-4 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                 class="w-full pl-9 pr-4 py-2 rounded-xl text-xs border border-blue-300 dark:border-blue-700/60 bg-blue-50/20 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner">
         </div>
-        <div class="text-xs text-slate-500 font-semibold self-end sm:self-center">
-          Showing <strong class="text-slate-900 dark:text-white font-mono">${displayCentres.length}</strong> of <span class="font-mono">${totalCount}</span> Centres
+        <div class="text-xs text-slate-600 dark:text-slate-300 font-bold self-end sm:self-center flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+          <span>Showing <strong class="text-blue-700 dark:text-blue-400 font-mono text-sm">${displayCentres.length}</strong> of <span class="font-mono">${totalCount}</span> Centres</span>
         </div>
       </div>
 
       <!-- Add New Centre Form (Collapsible) -->
-      <div id="new-centre-form" class="hidden glass-card p-6 space-y-4 border-2 border-emerald-500/40">
+      <div id="new-centre-form" class="hidden glass-card p-6 rounded-2xl space-y-4 border-2 border-emerald-500/50 shadow-lg">
         <h3 class="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
           <i data-lucide="plus-circle" class="w-4 h-4 text-emerald-600"></i>
           Register New Government Procurement Centre
@@ -579,12 +586,19 @@ async function renderAdminCentresPage() {
         </form>
       </div>
 
-      <!-- Centre Table Card -->
-      <div class="glass-card p-5 space-y-4">
-        <h3 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-          <i data-lucide="warehouse" class="w-4 h-4 text-blue-600"></i>
-          Procurement Centres Table
-        </h3>
+      <!-- Centre Table Card (Highlighted Border) -->
+      <div class="glass-card p-5 rounded-2xl border-2 border-blue-500/60 dark:border-blue-500/50 shadow-xl ring-2 ring-blue-500/20 space-y-4">
+        <div class="flex items-center justify-between pb-2 border-b border-blue-100 dark:border-blue-950">
+          <h3 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+            <span class="p-1 rounded-lg bg-blue-500 text-slate-950 shadow-xs">
+              <i data-lucide="warehouse" class="w-3.5 h-3.5"></i>
+            </span>
+            Procurement Centres Table
+          </h3>
+          <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
+            APMC Mandis
+          </span>
+        </div>
 
         ${displayCentres.length === 0 ? `
           <div class="p-10 text-center text-slate-400 text-xs">No procurement centres matched your query.</div>
@@ -906,59 +920,80 @@ async function renderAdminFarmersPage() {
   }
 
   return `
-    <div class="space-y-6">
+    <div class="space-y-5">
       
-      <!-- Summary Header Card -->
-      <div class="glass-card p-5 border-l-4 border-emerald-600 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <span class="text-2xl">👨‍🌾</span>
-            Registered Farmers
-          </h2>
-          <p class="text-xs text-slate-500 mt-0.5">
-            Automated registry synced directly from farmer registrations. Real-time dossiers with booking & DBT histories.
-          </p>
+      <!-- 3 Sleek & Highlighted Farmer Metric Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+        <!-- Card 1: Total Registered -->
+        <div class="glass-card p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 shadow-sm hover:shadow-md transition">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Registered</span>
+            <span class="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 text-xs">👥</span>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <h3 class="text-2xl font-black text-slate-900 dark:text-white font-mono">${totalCount}</h3>
+            <span class="text-[11px] font-bold text-slate-500">Farmers</span>
+          </div>
         </div>
 
-        <!-- Summary Metric Pills -->
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-            <span class="text-slate-400 block text-[10px] uppercase font-bold">Total Registered</span>
-            <strong class="text-slate-900 dark:text-white font-mono text-sm">${totalCount}</strong>
+        <!-- Card 2: Active Farmers (Highlighted Emerald) -->
+        <div class="glass-card p-4 rounded-xl border-2 border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/40 shadow-md ring-2 ring-emerald-500/20 hover:shadow-lg transition">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Active Farmers</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500 text-slate-950 shadow-xs flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping"></span>
+              Active
+            </span>
           </div>
-          <div class="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs">
-            <span class="text-emerald-700 dark:text-emerald-400 block text-[10px] uppercase font-bold">Active Farmers</span>
-            <strong class="text-emerald-700 dark:text-emerald-400 font-mono text-sm">${activeCount}</strong>
+          <div class="mt-2 flex items-baseline justify-between">
+            <h3 class="text-2xl font-black text-emerald-700 dark:text-emerald-400 font-mono">${activeCount}</h3>
+            <span class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">100% Eligible</span>
           </div>
-          <div class="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs">
-            <span class="text-rose-700 dark:text-rose-400 block text-[10px] uppercase font-bold">Blocked / Inactive</span>
-            <strong class="text-rose-700 dark:text-rose-400 font-mono text-sm">${inactiveCount}</strong>
+        </div>
+
+        <!-- Card 3: Blocked / Inactive -->
+        <div class="glass-card p-4 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-white/80 dark:bg-slate-900/80 shadow-sm hover:shadow-md transition">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Blocked / Inactive</span>
+            <span class="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 text-xs">🚫</span>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <h3 class="text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">${inactiveCount}</h3>
+            <span class="text-[11px] font-bold text-slate-400">Suspended</span>
           </div>
         </div>
       </div>
 
-      <!-- Search & Filter Controls -->
-      <div class="glass-card p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <!-- Search & Filter Controls (Highlighted Border) -->
+      <div class="glass-card p-4 rounded-2xl border-2 border-emerald-500/50 dark:border-emerald-500/40 bg-white/90 dark:bg-slate-900/90 shadow-md ring-2 ring-emerald-500/15 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div class="relative w-full sm:w-96">
-          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+          <i data-lucide="search" class="w-4 h-4 text-emerald-600 dark:text-emerald-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
           <input type="text"
                  id="admin-farmer-search-input"
                  value="${escapeHtml(adminFarmerSearchQuery)}"
                  oninput="handleAdminFarmerSearch(this.value)"
                  placeholder="Search by Farmer Name, ID (FRM-001), Mobile, Village..."
-                 class="w-full pl-9 pr-4 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                 class="w-full pl-9 pr-4 py-2 rounded-xl text-xs border border-emerald-300 dark:border-emerald-700/60 bg-emerald-50/20 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner">
         </div>
-        <div class="text-xs text-slate-500 font-semibold self-end sm:self-center">
-          Showing <strong class="text-slate-900 dark:text-white font-mono">${displayFarmers.length}</strong> of <span class="font-mono">${totalCount}</span> Farmers
+        <div class="text-xs text-slate-600 dark:text-slate-300 font-bold self-end sm:self-center flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span>Showing <strong class="text-emerald-700 dark:text-emerald-400 font-mono text-sm">${displayFarmers.length}</strong> of <span class="font-mono">${totalCount}</span> Farmers</span>
         </div>
       </div>
 
-      <!-- Farmer Table Card -->
-      <div class="glass-card p-5 space-y-4">
-        <h3 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-          <i data-lucide="table" class="w-4 h-4 text-emerald-600"></i>
-          Farmer Registry Table
-        </h3>
+      <!-- Farmer Table Card (Highlighted Border) -->
+      <div class="glass-card p-5 rounded-2xl border-2 border-emerald-500/60 dark:border-emerald-500/50 shadow-xl ring-2 ring-emerald-500/20 space-y-4">
+        <div class="flex items-center justify-between pb-2 border-b border-emerald-100 dark:border-emerald-950">
+          <h3 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+            <span class="p-1 rounded-lg bg-emerald-500 text-slate-950 shadow-xs">
+              <i data-lucide="table" class="w-3.5 h-3.5"></i>
+            </span>
+            Farmer Registry Table
+          </h3>
+          <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+            Live Database
+          </span>
+        </div>
 
         ${displayFarmers.length === 0 ? `
           <div class="p-10 text-center text-slate-400 text-xs">No registered farmers matched your query.</div>
@@ -1062,78 +1097,107 @@ async function renderAdminDealerApprovals() {
   }
 
   return `
-    <div class="space-y-6">
+    <div class="space-y-5">
       
-      <!-- Summary Header Card -->
-      <div class="glass-card p-5 border-l-4 border-amber-500 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <span class="text-2xl">🏢</span>
-            Registered Dealers
-          </h2>
-          <p class="text-xs text-slate-500 mt-0.5">
-            Mandatory Verification: Dealer registers ➔ Admin verifies/approves ➔ Dealer becomes Active ➔ Accesses Dealer Dashboard.
-          </p>
+      <!-- 4 Sleek Dealer Metric Summary Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <!-- Card 1: Total Registered -->
+        <div class="glass-card p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 shadow-sm hover:shadow-md transition">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Registered</span>
+            <span class="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs">🏢</span>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <h3 class="text-2xl font-black text-slate-900 dark:text-white font-mono">${totalCount}</h3>
+            <span class="text-[11px] font-bold text-slate-500">Dealers</span>
+          </div>
         </div>
 
-        <!-- Summary Metric Pills -->
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-            <span class="text-slate-400 block text-[10px] uppercase font-bold">Total Registered</span>
-            <strong class="text-slate-900 dark:text-white font-mono text-sm">${totalCount}</strong>
+        <!-- Card 2: Active Approved Dealers -->
+        <div class="glass-card p-4 rounded-xl border-2 border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/40 shadow-md ring-2 ring-emerald-500/20 hover:shadow-lg transition">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-300">Active & Approved</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500 text-slate-950 shadow-xs">Active</span>
           </div>
-          <div class="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs">
-            <span class="text-emerald-700 dark:text-emerald-400 block text-[10px] uppercase font-bold">Active Dealers</span>
-            <strong class="text-emerald-700 dark:text-emerald-400 font-mono text-sm">${activeCount}</strong>
+          <div class="mt-2 flex items-baseline justify-between">
+            <h3 class="text-2xl font-black text-emerald-700 dark:text-emerald-400 font-mono">${activeCount}</h3>
+            <span class="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">Operating</span>
           </div>
-          <div class="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 rounded-xl text-xs">
-            <span class="text-amber-700 dark:text-amber-400 block text-[10px] uppercase font-bold">Pending Approval</span>
-            <strong class="text-amber-700 dark:text-amber-400 font-mono text-sm">${pendingCount}</strong>
+        </div>
+
+        <!-- Card 3: Pending Approval Dealers (Highlighted Amber) -->
+        <div class="glass-card p-4 rounded-xl border-2 border-amber-500 bg-amber-50/70 dark:bg-amber-950/50 shadow-md ring-2 ring-amber-500/30 hover:shadow-lg transition">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">Pending Approval</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950 shadow-xs flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping"></span>
+              Action
+            </span>
           </div>
-          <div class="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs">
-            <span class="text-rose-700 dark:text-rose-400 block text-[10px] uppercase font-bold">Inactive / Suspended</span>
-            <strong class="text-rose-700 dark:text-rose-400 font-mono text-sm">${inactiveCount}</strong>
+          <div class="mt-2 flex items-baseline justify-between">
+            <h3 class="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">${pendingCount}</h3>
+            <span class="text-[11px] font-bold text-amber-700 dark:text-amber-400">Needs Review</span>
+          </div>
+        </div>
+
+        <!-- Card 4: Inactive / Suspended Dealers -->
+        <div class="glass-card p-4 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-white/80 dark:bg-slate-900/80 shadow-sm hover:shadow-md transition">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Inactive / Suspended</span>
+            <span class="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 text-xs">🚫</span>
+          </div>
+          <div class="mt-2 flex items-baseline justify-between">
+            <h3 class="text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">${inactiveCount}</h3>
+            <span class="text-[11px] font-bold text-slate-400">Restricted</span>
           </div>
         </div>
       </div>
 
-      <!-- Search & Filter Controls -->
-      <div class="glass-card p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <!-- Search & Filter Controls (Highlighted Border) -->
+      <div class="glass-card p-4 rounded-2xl border-2 border-amber-500/50 dark:border-amber-500/40 bg-white/90 dark:bg-slate-900/90 shadow-md ring-2 ring-amber-500/15 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div class="relative w-full sm:w-80">
-          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+          <i data-lucide="search" class="w-4 h-4 text-amber-600 dark:text-amber-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
           <input type="text"
                  id="admin-dealer-search-input"
                  value="${escapeHtml(adminDealerSearchQuery)}"
                  oninput="handleAdminDealerSearch(this.value)"
                  placeholder="Search by Dealer Name, ID (DLR-001), License, Mandi..."
-                 class="w-full pl-9 pr-4 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                 class="w-full pl-9 pr-4 py-2 rounded-xl text-xs border border-amber-300 dark:border-amber-700/60 bg-amber-50/20 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-inner">
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-          <span class="text-xs font-bold text-slate-400">Status:</span>
-          ${['ALL', 'APPROVED', 'PENDING', 'SUSPENDED', 'REJECTED'].map(st => `
+          <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Filter:</span>
+          ${['ALL', 'PENDING', 'APPROVED', 'SUSPENDED', 'REJECTED'].map(st => `
             <button onclick="handleAdminDealerFilter('${st}')"
-                    class="px-3 py-1 rounded-xl text-xs font-bold transition ${
+                    class="px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                       adminDealerFilter === st
-                        ? 'bg-amber-500 text-slate-950 shadow-sm'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                        ? (st === 'PENDING' ? 'bg-amber-500 text-slate-950 font-black shadow-md ring-2 ring-amber-400/40' : 'bg-amber-500 text-slate-950 shadow-sm')
+                        : (st === 'PENDING' ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 hover:bg-amber-200 border border-amber-300 dark:border-amber-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200')
                     }">
-              ${st === 'ALL' ? 'All Dealers' : (st === 'APPROVED' ? 'Active' : st)}
+              ${st === 'ALL' ? 'All Dealers' : (st === 'APPROVED' ? 'Active' : (st === 'PENDING' ? `🟡 Pending Verification (${pendingCount})` : st))}
             </button>
           `).join('')}
         </div>
 
-        <div class="text-xs text-slate-500 font-semibold self-end sm:self-center">
-          Showing <strong class="text-slate-900 dark:text-white font-mono">${displayDealers.length}</strong> of <span class="font-mono">${totalCount}</span> Dealers
+        <div class="text-xs text-slate-600 dark:text-slate-300 font-bold self-end sm:self-center flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+          <span>Showing <strong class="text-amber-700 dark:text-amber-400 font-mono text-sm">${displayDealers.length}</strong> of <span class="font-mono">${totalCount}</span> Dealers</span>
         </div>
       </div>
 
-      <!-- Dealer Table Card -->
-      <div class="glass-card p-5 space-y-4">
-        <h3 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-          <i data-lucide="briefcase" class="w-4 h-4 text-amber-500"></i>
-          Dealer Registry Table
-        </h3>
+      <!-- Dealer Table Card (Highlighted Border) -->
+      <div class="glass-card p-5 rounded-2xl border-2 border-amber-500/60 dark:border-amber-500/50 shadow-xl ring-2 ring-amber-500/20 space-y-4">
+        <div class="flex items-center justify-between pb-2 border-b border-amber-100 dark:border-amber-950">
+          <h3 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+            <span class="p-1 rounded-lg bg-amber-500 text-slate-950 shadow-xs">
+              <i data-lucide="briefcase" class="w-3.5 h-3.5"></i>
+            </span>
+            Dealer Registry Table
+          </h3>
+          <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+            Compliance & Licensing
+          </span>
+        </div>
 
         ${displayDealers.length === 0 ? `
           <div class="p-10 text-center text-slate-400 text-xs">No registered dealers matched your query.</div>
@@ -1147,7 +1211,7 @@ async function renderAdminDealerApprovals() {
                   <th class="pb-3 px-2">Procurement Centre</th>
                   <th class="pb-3 px-2">License No.</th>
                   <th class="pb-3 px-2">Registered Date</th>
-                  <th class="pb-3 px-2">Status</th>
+                  <th class="pb-3 px-2">Status &amp; Dossier</th>
                   <th class="pb-3 px-2 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1170,17 +1234,29 @@ async function renderAdminDealerApprovals() {
                     <td class="py-3 px-2 font-mono font-bold text-emerald-700 dark:text-emerald-400">${escapeHtml(d.license_number)}</td>
                     <td class="py-3 px-2 text-slate-600 dark:text-slate-400">${escapeHtml(d.registered_date || d.created_at)}</td>
                     <td class="py-3 px-2">
-                      <span class="badge-status ${d.status === 'APPROVED' ? 'badge-approved' : (d.status === 'PENDING' ? 'badge-pending' : 'badge-rejected')} text-[10px] py-0.5 px-2">
-                        ${d.status === 'APPROVED' ? 'Active' : d.status}
-                      </span>
+                      <div class="space-y-1">
+                        <span class="badge-status ${d.status === 'APPROVED' ? 'badge-approved' : (d.status === 'PENDING' ? 'badge-pending' : 'badge-rejected')} text-[10px] py-0.5 px-2">
+                          ${d.status === 'APPROVED' ? 'Active' : (d.status === 'PENDING' ? 'Pending Approval' : d.status)}
+                        </span>
+                        ${d.status === 'PENDING' ? `
+                          <span class="block text-[10px] text-amber-700 dark:text-amber-400 font-bold">📑 6 Docs Uploaded</span>
+                        ` : ''}
+                      </div>
                     </td>
                     <td class="py-3 px-2 text-right">
-                      <div class="flex items-center justify-end gap-1.5">
-                        <button onclick="openDealerDetailsModal(${d.dealer_id})" class="btn-agri text-xs py-1 px-3 shadow-sm flex items-center gap-1">
+                      <div class="flex items-center justify-end gap-1.5 flex-wrap">
+                        <button onclick="openDealerDetailsModal(${d.dealer_id})" class="btn-agri text-xs py-1 px-2.5 shadow-sm flex items-center gap-1">
                           <i data-lucide="eye" class="w-3.5 h-3.5"></i>
-                          <span>View</span>
+                          <span>Dossier</span>
                         </button>
-                        ${d.status !== 'APPROVED' ? `
+                        ${d.status === 'PENDING' ? `
+                          <button onclick="handleUpdateDealer(${d.dealer_id}, 'APPROVED')" title="Approve Dealer" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm flex items-center gap-1">
+                            <span>Approve ✓</span>
+                          </button>
+                          <button onclick="promptRejectDealer(${d.dealer_id})" title="Reject Dealer" class="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-950 dark:text-rose-300 rounded-lg text-xs font-bold transition">
+                            Reject ✕
+                          </button>
+                        ` : (d.status !== 'APPROVED' ? `
                           <button onclick="handleUpdateDealer(${d.dealer_id}, 'APPROVED')" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-sm">
                             Activate
                           </button>
@@ -1188,7 +1264,7 @@ async function renderAdminDealerApprovals() {
                           <button onclick="handleUpdateDealer(${d.dealer_id}, 'SUSPENDED', 'Administrative Review')" class="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-950 dark:text-rose-300 rounded-lg text-xs font-bold transition">
                             Deactivate
                           </button>
-                        `}
+                        `)}
                       </div>
                     </td>
                   </tr>
@@ -1504,6 +1580,69 @@ function renderDealerDetailsModalHtml() {
             <div><span class="text-slate-400 block font-semibold text-[11px]">Centre</span><span class="text-slate-800 dark:text-slate-200 font-bold">${escapeHtml(dealer.procurement_centre || 'Warangal Central Grain Mandi')}</span></div>
             <div><span class="text-slate-400 block font-semibold text-[11px]">Registered</span><span class="text-slate-700 dark:text-slate-300 font-semibold">${escapeHtml(dealer.registered_date || dealer.created_at)}</span></div>
           </div>
+          <!-- Rejection Reason if Rejected -->
+          ${dealer.status === 'REJECTED' ? `
+            <div class="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border-2 border-rose-300 dark:border-rose-800 text-left">
+              <span class="text-[11px] font-black uppercase tracking-wider text-rose-800 dark:text-rose-300 block mb-1">
+                ⚠️ Current Rejection Reason:
+              </span>
+              <p class="text-xs font-bold text-rose-950 dark:text-rose-100">
+                "${escapeHtml(dealer.rejection_reason || 'Verification document mismatch or mandatory criteria not satisfied.')}"
+              </p>
+            </div>
+          ` : ''}
+
+          <!-- Uploaded 6 Mandatory Verification Documents Dossier -->
+          <div class="space-y-3 bg-amber-50/50 dark:bg-amber-950/30 p-4 rounded-2xl border border-amber-200 dark:border-amber-800">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                  <span class="text-base">📑</span> Uploaded Verification Documents (6 of 6)
+                </h4>
+                <p class="text-[11px] text-slate-500">Official regulatory certificates and identity documents submitted during registration.</p>
+              </div>
+              <span class="badge-status ${dealer.status === 'APPROVED' ? 'badge-approved' : 'badge-pending'} text-[10px]">
+                ${dealer.status === 'APPROVED' ? 'ALL VERIFIED ✓' : 'PENDING ADMIN AUDIT'}
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              ${[
+                { key: 'aadhaar_card', name: 'Aadhaar Card', icon: '🪪' },
+                { key: 'pan_card', name: 'PAN Card', icon: '💳' },
+                { key: 'dealer_license', name: 'Dealer/Trader License', icon: '📜' },
+                { key: 'business_reg', name: 'Business Registration Certificate', icon: '🏢' },
+                { key: 'bank_proof', name: 'Bank Account Proof', icon: '🏦' },
+                { key: 'address_proof', name: 'Address Proof', icon: '🏠' }
+              ].map(item => {
+                const rawDocs = dealer.verification_documents || {};
+                const doc = rawDocs[item.key] || {
+                  document_key: item.key,
+                  document_name: item.name,
+                  file_name: `${item.key}.pdf`,
+                  file_size: "1.2 MB",
+                  status: "UPLOADED",
+                  uploaded_at: dealer.registered_date || "10-Sep-2026"
+                };
+                return `
+                  <div class="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2.5 overflow-hidden">
+                      <span class="text-2xl shrink-0">${item.icon}</span>
+                      <div class="truncate">
+                        <span class="font-extrabold text-slate-900 dark:text-white block text-xs truncate">${escapeHtml(item.name)}</span>
+                        <span class="text-[10px] text-slate-400 font-mono block truncate">${escapeHtml(doc.file_name || `${item.key}.pdf`)} • ${escapeHtml(doc.file_size || '1.2 MB')}</span>
+                      </div>
+                    </div>
+                    <button type="button" onclick="openAdminDocModal(${dealer.dealer_id}, '${item.key}')" class="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg text-[11px] shadow-sm transition shrink-0 flex items-center gap-1">
+                      <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                      <span>View</span>
+                    </button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div class="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl">
               <span class="text-emerald-800 dark:text-emerald-400 block font-extrabold text-[11px] uppercase">Today's Procurement</span>
@@ -1531,12 +1670,137 @@ function renderDealerDetailsModalHtml() {
         </div>
         <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
-            ${dealer.status !== 'APPROVED' ? `<button onclick="handleUpdateDealer(${dealer.dealer_id}, 'APPROVED')" class="btn-agri text-xs py-2 px-4">Activate / Approve Dealer ✓</button>` : ''}
+            ${dealer.status !== 'APPROVED' ? `<button onclick="handleUpdateDealer(${dealer.dealer_id}, 'APPROVED')" class="btn-agri text-xs py-2 px-4 shadow-md font-extrabold">✅ Approve Dealer Registration</button>` : ''}
             ${dealer.status === 'APPROVED' ? `<button onclick="handleUpdateDealer(${dealer.dealer_id}, 'SUSPENDED', 'Administrative Policy Action')" class="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl font-bold text-xs">Deactivate / Suspend</button>` : ''}
-            ${dealer.status !== 'REJECTED' ? `<button onclick="promptRejectDealer(${dealer.dealer_id})" class="px-3.5 py-2 bg-rose-100 text-rose-800 rounded-xl font-bold text-xs">Reject</button>` : ''}
+            ${dealer.status !== 'REJECTED' ? `<button onclick="promptRejectDealer(${dealer.dealer_id})" class="px-3.5 py-2 bg-rose-100 hover:bg-rose-200 text-rose-800 dark:bg-rose-950 dark:text-rose-300 rounded-xl font-bold text-xs">❌ Reject Application</button>` : ''}
           </div>
           <button onclick="closeDealerDetailsModal()" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white rounded-xl font-bold text-xs">Close Dossier</button>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+// -------------------------------------------------------------
+// 7.5 ADMIN DOCUMENT VIEWER MODAL
+// -------------------------------------------------------------
+let adminActiveDocModal = null;
+
+function openAdminDocModal(dealerId, docKey) {
+  if (!adminActiveDealerDetail || !adminActiveDealerDetail.dealer) return;
+  const dealer = adminActiveDealerDetail.dealer;
+  const rawDocs = dealer.verification_documents || {};
+  const doc = rawDocs[docKey] || {
+    document_key: docKey,
+    document_name: docKey.replace(/_/g, ' ').toUpperCase(),
+    file_name: `${docKey}.pdf`,
+    file_size: "1.2 MB",
+    status: "UPLOADED",
+    uploaded_at: dealer.registered_date || "10-Sep-2026",
+    issuer: "Government Official Verification Portal",
+    document_number: dealer.license_number || dealer.government_id_number || "REG-991823"
+  };
+
+  adminActiveDocModal = {
+    dealerId,
+    dealerName: dealer.business_name || dealer.dealer_name,
+    ownerName: dealer.owner_name || dealer.full_name,
+    docKey,
+    doc
+  };
+  renderApp();
+}
+
+function closeAdminDocModal() {
+  adminActiveDocModal = null;
+  renderApp();
+}
+
+function renderAdminDocModalHtml() {
+  if (!adminActiveDocModal) return "";
+  const { dealerName, ownerName, doc } = adminActiveDocModal;
+
+  const docIcons = {
+    aadhaar_card: '🪪',
+    pan_card: '💳',
+    dealer_license: '📜',
+    business_reg: '🏢',
+    bank_proof: '🏦',
+    address_proof: '🏠'
+  };
+  const icon = docIcons[doc.document_key] || '📄';
+
+  return `
+    <div class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
+      <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-3xl shadow-2xl border-2 border-emerald-500/30 dark:border-emerald-500/20 overflow-hidden flex flex-col max-h-[90vh]">
+        
+        <!-- Header -->
+        <div class="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl">${icon}</span>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 font-mono font-bold text-xs rounded border border-emerald-500/30">Official Dossier Document</span>
+                <span class="badge-status badge-approved text-[10px]">VERIFIED FORMAT</span>
+              </div>
+              <h3 class="text-lg font-black mt-0.5">${escapeHtml(doc.document_name || 'Verification Document')}</h3>
+              <p class="text-xs text-slate-400">Applicant: <strong class="text-white">${escapeHtml(dealerName)}</strong> (${escapeHtml(ownerName)})</p>
+            </div>
+          </div>
+          <button onclick="closeAdminDocModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Document Inspection Body -->
+        <div class="p-6 overflow-y-auto space-y-4 text-xs">
+          
+          <!-- Document Metadata Grid -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-slate-50 dark:bg-slate-800/80 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700">
+            <div>
+              <span class="text-slate-400 block font-semibold text-[10px] uppercase">File Name</span>
+              <strong class="font-mono text-slate-800 dark:text-slate-200 text-xs truncate block">${escapeHtml(doc.file_name)}</strong>
+            </div>
+            <div>
+              <span class="text-slate-400 block font-semibold text-[10px] uppercase">File Size</span>
+              <strong class="text-slate-900 dark:text-white font-mono text-xs">${escapeHtml(doc.file_size || '1.2 MB')}</strong>
+            </div>
+            <div>
+              <span class="text-slate-400 block font-semibold text-[10px] uppercase">Uploaded Date</span>
+              <span class="text-slate-700 dark:text-slate-300 font-semibold">${escapeHtml(doc.uploaded_at || '10-Sep-2026')}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block font-semibold text-[10px] uppercase">Status</span>
+              <span class="text-emerald-600 font-bold">Valid &amp; Legible ✓</span>
+            </div>
+          </div>
+
+          <!-- Document Preview Canvas -->
+          <div class="p-6 rounded-2xl bg-slate-100 dark:bg-slate-950 border-2 border-dashed border-slate-300 dark:border-slate-800 flex flex-col items-center justify-center text-center space-y-3 min-h-[220px]">
+            <div class="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-2xl font-black shadow-inner">
+              ${icon}
+            </div>
+            <div>
+              <h4 class="font-black text-slate-900 dark:text-white text-base">${escapeHtml(doc.document_name)}</h4>
+              <p class="text-xs text-slate-500 font-mono mt-0.5">Reference / Doc No: ${escapeHtml(doc.document_number || 'DOC-REG-2026-VERIFIED')}</p>
+              <p class="text-[11px] text-slate-400 mt-1">Issuing Authority: <strong class="text-slate-700 dark:text-slate-300">${escapeHtml(doc.issuer || 'Government Regulatory Authority')}</strong></p>
+            </div>
+            <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 rounded-full font-bold text-[11px]">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+              <span>Official Government APMC Mandi Regulatory Document Preview</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Footer -->
+        <div class="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+          <span class="text-[11px] text-slate-500 font-semibold">Government Nodal Officer Audit Session</span>
+          <button onclick="closeAdminDocModal()" class="px-5 py-2 bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl font-extrabold text-xs transition">
+            Close Document Preview
+          </button>
+        </div>
+
       </div>
     </div>
   `;
@@ -1575,9 +1839,9 @@ async function handleUpdateDealer(dealerId, status, reason = null) {
 }
 
 function promptRejectDealer(dealerId) {
-  const reason = prompt("Enter reason for rejection:");
-  if (reason) {
-    handleUpdateDealer(dealerId, 'REJECTED', reason);
+  const reason = prompt("Please provide a reason for rejecting this dealer registration application:\n(This will be displayed to the dealer upon login)", "Trade license expired / Document mismatch with registration details");
+  if (reason && reason.trim()) {
+    handleUpdateDealer(dealerId, 'REJECTED', reason.trim());
   }
 }
 
@@ -1862,7 +2126,8 @@ async function renderAdminAssignmentsPage() {
         </div>
       </div>
 
-      <div class="glass-card p-5 space-y-4">
+      <!-- Assignments Table Card (Highlighted Border) -->
+      <div class="glass-card p-5 rounded-2xl border-2 border-emerald-500/60 dark:border-emerald-500/50 shadow-xl ring-2 ring-emerald-500/20 space-y-4">
         ${safeAssignments.length === 0 ? `
           <div class="p-10 text-center text-slate-400 text-xs">No farmer-dealer procurement assignments recorded yet.</div>
         ` : `
@@ -2343,20 +2608,21 @@ async function renderAdminMspRatesPage() {
         </form>
       </div>
 
-      <!-- Search & Rates Table Card -->
-      <div class="glass-card p-5 space-y-4">
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <!-- Search & Rates Table Card (Highlighted Border) -->
+      <div class="glass-card p-5 rounded-2xl border-2 border-amber-500/60 dark:border-amber-500/50 shadow-xl ring-2 ring-amber-500/20 space-y-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-amber-100 dark:border-amber-950">
           <div class="relative w-full sm:w-80">
-            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+            <i data-lucide="search" class="w-4 h-4 text-amber-600 dark:text-amber-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
             <input type="text"
                    value="${escapeHtml(adminMspSearchQuery)}"
                    oninput="handleAdminMspSearch(this.value)"
                    placeholder="Search crop, season (e.g. 2026-27)..."
-                   class="w-full pl-9 pr-4 py-2 rounded-xl text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500">
+                   class="w-full pl-9 pr-4 py-2 rounded-xl text-xs border border-amber-300 dark:border-amber-700/60 bg-amber-50/20 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-inner">
           </div>
 
-          <div class="text-xs text-slate-500 font-semibold self-end sm:self-center">
-            Showing <strong class="text-slate-900 dark:text-white font-mono">${displayRates.length}</strong> Official Rates
+          <div class="text-xs text-slate-600 dark:text-slate-300 font-bold self-end sm:self-center flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span>Showing <strong class="text-amber-700 dark:text-amber-400 font-mono text-sm">${displayRates.length}</strong> Official Rates</span>
           </div>
         </div>
 

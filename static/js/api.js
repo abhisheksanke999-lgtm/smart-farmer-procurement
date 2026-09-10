@@ -13,10 +13,13 @@ const API_BASE = (() => {
 class ApiClient {
   constructor() {
     this.token = localStorage.getItem("access_token") || null;
+    this.cache = new Map();
+    this.inflight = new Map();
   }
 
   setToken(token) {
     this.token = token;
+    this.invalidateCache();
     if (token) {
       localStorage.setItem("access_token", token);
     } else {
@@ -34,69 +37,141 @@ class ApiClient {
     }
   }
 
+  invalidateCache(pattern = null) {
+    if (!pattern) {
+      this.cache.clear();
+      return;
+    }
+    for (const key of this.cache.keys()) {
+      if (key.includes(pattern)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
   async request(endpoint, options = {}) {
-    const headers = {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    };
+    const method = (options.method || "GET").toUpperCase();
+    const isGet = method === "GET";
+    const cacheKey = `${method}:${endpoint}`;
+    const noCache = options.noCache === true;
+    const ttl = options.ttl || (
+      endpoint.includes("/auth/") || endpoint.includes("/centres") || endpoint.includes("/categories") ? 300000 :
+      endpoint.includes("/analytics") || endpoint.includes("/msp-rates") || endpoint.includes("/audit-logs") ? 120000 :
+      endpoint.includes("/notifications") ? 15000 :
+      45000
+    );
 
-    if (this.token) {
-      headers["Authorization"] = `Bearer ${this.token}`;
-    }
-
-    const controller = new AbortController();
-    const timeoutMs = options.timeoutMs || 15000;
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    let response;
-    try {
-      response = await fetch(`${API_BASE}${endpoint}`, {
-        ...options,
-        headers,
-        signal: controller.signal
-      });
-    } catch (networkErr) {
-      clearTimeout(timeoutId);
-      if (networkErr.name === 'AbortError') {
-        console.error(`Request Timeout [${endpoint}]: exceeded ${timeoutMs}ms`);
-        throw new Error(`Request timed out while connecting to ${endpoint}. Please check server connectivity and retry.`);
+    // 1. Check in-memory cache for GET requests
+    if (isGet && !noCache) {
+      const cached = this.cache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp < ttl)) {
+        return JSON.parse(JSON.stringify(cached.data));
       }
-      console.error(`Network Error [${endpoint}]:`, networkErr);
-      throw new Error(
-        `Unable to reach backend server at ${API_BASE}. Please make sure the server is active and accessible.`
-      );
-    } finally {
-      clearTimeout(timeoutId);
     }
 
-    let data;
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
+    // 2. Deduplicate in-flight identical GET requests
+    if (isGet && !noCache && this.inflight.has(cacheKey)) {
+      return await this.inflight.get(cacheKey);
+    }
+
+    const execPromise = (async () => {
+      const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+      };
+
+      if (this.token) {
+        headers["Authorization"] = `Bearer ${this.token}`;
+      }
+
+      const controller = new AbortController();
+      const timeoutMs = options.timeoutMs || 15000;
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      let response;
       try {
-        data = await response.json();
-      } catch (jsonErr) {
-        data = { message: `Invalid JSON response from server (Status: ${response.status})` };
+        response = await fetch(`${API_BASE}${endpoint}`, {
+          ...options,
+          headers,
+          signal: controller.signal
+        });
+      } catch (networkErr) {
+        clearTimeout(timeoutId);
+        if (networkErr.name === 'AbortError') {
+          console.error(`Request Timeout [${endpoint}]: exceeded ${timeoutMs}ms`);
+          throw new Error(`Request timed out while connecting to ${endpoint}. Please check server connectivity and retry.`);
+        }
+        console.error(`Network Error [${endpoint}]:`, networkErr);
+        throw new Error(
+          `Unable to reach backend server at ${API_BASE}. Please make sure the server is active and accessible.`
+        );
+      } finally {
+        clearTimeout(timeoutId);
       }
-    } else {
-      const text = await response.text();
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = { message: text.slice(0, 150) || `Server returned HTTP ${response.status} ${response.statusText}` };
-      }
-    }
 
-    if (!response.ok) {
-      if (response.status === 401 && !endpoint.includes("/auth/login")) {
-        this.setToken(null);
-        if (typeof state !== 'undefined' && state.currentUser) {
-          state.setCurrentUser(null);
+      let data;
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        try {
+          data = await response.json();
+        } catch (jsonErr) {
+          data = { message: `Invalid JSON response from server (Status: ${response.status})` };
+        }
+      } else {
+        const text = await response.text();
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { message: text.slice(0, 150) || `Server returned HTTP ${response.status} ${response.statusText}` };
         }
       }
-      throw new Error(data.detail || data.message || `Request failed with status ${response.status}`);
+
+      if (!response.ok) {
+        if (response.status === 401 && !endpoint.includes("/auth/login")) {
+          this.setToken(null);
+          if (typeof state !== 'undefined' && state.currentUser) {
+            state.setCurrentUser(null);
+          }
+        }
+        throw new Error(data.detail || data.message || `Request failed with status ${response.status}`);
+      }
+
+      // If mutation, invalidate related caches
+      if (!isGet) {
+        if (endpoint.includes("/farmer/")) {
+          this.invalidateCache("/farmer");
+          this.invalidateCache("/dealer");
+          this.invalidateCache("/admin");
+        } else if (endpoint.includes("/dealer/")) {
+          this.invalidateCache("/dealer");
+          this.invalidateCache("/farmer");
+          this.invalidateCache("/admin");
+        } else if (endpoint.includes("/admin/")) {
+          this.invalidateCache();
+        } else {
+          this.invalidateCache();
+        }
+      } else {
+        // Cache successful GET response
+        this.cache.set(cacheKey, {
+          data: JSON.parse(JSON.stringify(data)),
+          timestamp: Date.now()
+        });
+      }
+
+      return data;
+    })();
+
+    if (isGet && !noCache) {
+      this.inflight.set(cacheKey, execPromise);
+      try {
+        return await execPromise;
+      } finally {
+        this.inflight.delete(cacheKey);
+      }
     }
 
-    return data;
+    return await execPromise;
   }
 
   // Auth Endpoints
@@ -263,7 +338,28 @@ class ApiClient {
     return await this.request(url);
   }
 
+  async getFarmerLiveQueue(bookingCode = null) {
+    let url = "/farmer/queue-status";
+    if (bookingCode) url += `?booking_code=${encodeURIComponent(bookingCode)}`;
+    return await this.request(url);
+  }
+
+  async getFarmerProfile() {
+    return await this.request("/farmer/profile");
+  }
+
+  async updateFarmerProfile(data) {
+    return await this.request("/farmer/profile", {
+      method: "PUT",
+      body: JSON.stringify(data)
+    });
+  }
+
   // Dealer Endpoints
+  async getDealerLiveQueue() {
+    return await this.request("/dealer/live-queue");
+  }
+
   async scanQRCode(bookingCode) {
     return await this.request("/dealer/scan-qr", {
       method: "POST",
@@ -274,6 +370,7 @@ class ApiClient {
   async getDealerAssignedFarmers() {
     return await this.request("/dealer/assigned-farmers");
   }
+
 
   async processProcurement(bookingCode, actualQty, grade, rate, slipNo) {
     return await this.request("/dealer/process-procurement", {
@@ -290,6 +387,25 @@ class ApiClient {
 
   async getDealerTransactions() {
     return await this.request("/dealer/transactions");
+  }
+
+  async getDealerProfile() {
+    return await this.request("/dealer/profile");
+  }
+
+  async updateDealerProfile(data) {
+    return await this.request("/dealer/profile", {
+      method: "PUT",
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getDealerCentres() {
+    return await this.request("/dealer/centres");
+  }
+
+  async getDealerCategories() {
+    return await this.request("/dealer/categories");
   }
 
   // Admin Endpoints

@@ -1,8 +1,15 @@
 import enum
+import zoneinfo
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, ForeignKey, Text, Enum
 from sqlalchemy.orm import relationship
 from .database import Base
+
+IST = zoneinfo.ZoneInfo("Asia/Kolkata")
+
+def get_ist_now() -> datetime:
+    """Returns current naive datetime strictly in Indian Standard Time (Asia/Kolkata)."""
+    return datetime.now(IST).replace(tzinfo=None)
 
 class UserRole(str, enum.Enum):
     ADMIN = "ADMIN"
@@ -27,6 +34,7 @@ class BookingStatus(str, enum.Enum):
     PROCUREMENT_STARTED = "PROCUREMENT_STARTED"
     PROCUREMENT_COMPLETED = "PROCUREMENT_COMPLETED"
     CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
 
 class QueueStatus(str, enum.Enum):
     WAITING = "WAITING"
@@ -61,8 +69,8 @@ class User(Base):
     verification_token = Column(String, nullable=True)
     verification_expires = Column(DateTime, nullable=True)
     language_preference = Column(String, default="en") # "en" or "te"
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
     farmer_profile = relationship("FarmerProfile", back_populates="user", uselist=False)
     dealer_profile = relationship("DealerProfile", back_populates="user", uselist=False)
@@ -76,7 +84,7 @@ class Category(Base):
     name = Column(String, unique=True, index=True, nullable=False) # e.g. "Paddy", "Cotton"
     description = Column(String, nullable=True)
     status = Column(String, default="ACTIVE") # ACTIVE, INACTIVE
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
 
     dealers = relationship("DealerProfile", back_populates="category")
     bookings = relationship("Booking", back_populates="category")
@@ -115,10 +123,15 @@ class DealerProfile(Base):
     status = Column(String, default=DealerStatus.PENDING)
     assigned_centre_id = Column(Integer, ForeignKey("procurement_centres.id"), nullable=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    bank_name = Column(String, nullable=True)
+    bank_account_no = Column(String, nullable=True)
+    ifsc_code = Column(String, nullable=True)
+    daily_capacity_quintals = Column(Float, default=500.0)
+    daily_requirements = Column(String, nullable=True)
     rejection_reason = Column(Text, nullable=True)
     verification_documents_url = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
     user = relationship("User", back_populates="dealer_profile")
     category = relationship("Category", back_populates="dealers")
@@ -139,7 +152,7 @@ class ProcurementCentre(Base):
     operating_hours = Column(String, default="08:00 AM - 05:00 PM")
     supported_crops = Column(String, default="Rice,Paddy,Cotton,Maize,Chilli")
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
 
     slots = relationship("Slot", back_populates="centre")
     bookings = relationship("Booking", back_populates="centre")
@@ -175,8 +188,8 @@ class FarmerDealerAssignment(Base):
     booking_id = Column(Integer, ForeignKey("bookings.id"), nullable=True, index=True)
     qr_token = Column(String, unique=True, index=True, nullable=False) # Secure opaque token for QR pass
     status = Column(String, default=AssignmentStatus.ACTIVE, index=True) # ACTIVE, COMPLETED, CANCELLED
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
     farmer = relationship("User", foreign_keys=[farmer_id], backref="dealer_assignments")
     dealer = relationship("User", foreign_keys=[dealer_id], backref="assigned_farmer_relationships")
@@ -199,8 +212,8 @@ class Booking(Base):
     expected_quantity_quintals = Column(Float, nullable=False)
     status = Column(String, default=BookingStatus.BOOKED)
     qr_data = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
     farmer = relationship("User", back_populates="bookings", foreign_keys=[farmer_id])
     assigned_dealer = relationship("User", foreign_keys=[dealer_id])
@@ -240,7 +253,7 @@ class ProcurementTransaction(Base):
     rate_per_quintal = Column(Float, nullable=False)
     total_amount = Column(Float, nullable=False)
     weighment_slip_no = Column(String, nullable=False)
-    transaction_time = Column(DateTime, default=datetime.utcnow)
+    transaction_time = Column(DateTime, default=get_ist_now)
 
     booking = relationship("Booking", back_populates="transaction")
     farmer = relationship("User", foreign_keys=[farmer_id])
@@ -258,8 +271,8 @@ class Payment(Base):
     payment_method = Column(String, default="Direct Bank Transfer (DBT)")
     bank_utr = Column(String, nullable=True)
     failure_reason = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
     transaction = relationship("ProcurementTransaction", back_populates="payment")
     farmer = relationship("User", foreign_keys=[farmer_id])
@@ -275,7 +288,7 @@ class Notification(Base):
     message_te = Column(Text, nullable=True)
     type = Column(String, default=NotificationType.SYSTEM)
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
 
     user = relationship("User", back_populates="notifications")
 
@@ -287,7 +300,7 @@ class AuditLog(Base):
     actor_role = Column(String, nullable=True)
     action = Column(String, nullable=False)
     details = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
 
 class Complaint(Base):
     __tablename__ = "complaints"
@@ -299,7 +312,7 @@ class Complaint(Base):
     description = Column(Text, nullable=False)
     status = Column(String, default="OPEN")
     response = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
 
 class PendingFarmerRegistration(Base):
     __tablename__ = "pending_farmer_registrations"
@@ -314,9 +327,9 @@ class PendingFarmerRegistration(Base):
     otp_hash = Column(String, nullable=False) # Salted SHA-256 cryptographic hash (never plaintext)
     otp_expires_at = Column(DateTime, nullable=False)
     attempts_left = Column(Integer, default=5, nullable=False)
-    last_sent_at = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_sent_at = Column(DateTime, default=get_ist_now)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
 
 class MSPRate(Base):
@@ -329,7 +342,7 @@ class MSPRate(Base):
     effective_from = Column(String, nullable=False)
     status = Column(String, default="ACTIVE")
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
 
 

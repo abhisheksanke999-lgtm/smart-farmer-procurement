@@ -31,6 +31,7 @@ class UserRegister(BaseModel):
     assigned_centre_id: Optional[int] = None
     category_id: Optional[int] = None
     address: Optional[str] = None
+    verification_documents: Optional[dict] = None
 
 class CategoryOut(BaseModel):
     id: int
@@ -149,4 +150,79 @@ class MSPRateOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Farmer Profile Schemas
+class FarmerProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    village: Optional[str] = None
+    district: Optional[str] = None
+    land_size_acres: Optional[float] = None
+    bank_name: Optional[str] = None
+    bank_account_no: Optional[str] = None
+    ifsc_code: Optional[str] = None
+
+class FarmerProfileOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: str
+    role: str
+    is_email_verified: bool
+    address: Optional[str] = None
+    village: Optional[str] = None
+    district: Optional[str] = None
+    state: Optional[str] = "Telangana"
+    land_size_acres: Optional[float] = 2.5
+    bank_name: Optional[str] = None
+    bank_account_no: Optional[str] = None
+    ifsc_code: Optional[str] = None
+    aadhaar_last4: Optional[str] = None
+
+# Dealer Profile Schemas
+class DealerProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    business_name: Optional[str] = None
+    address: Optional[str] = None
+    assigned_centre_id: Optional[int] = None
+    category_id: Optional[int] = None
+    daily_capacity_quintals: Optional[float] = None
+    daily_requirements: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account_no: Optional[str] = None
+    ifsc_code: Optional[str] = None
+
+class DealerProfileOut(BaseModel):
+    id: int
+    user_id: int
+    name: str
+    email: str
+    phone: str
+    role: str
+    business_name: str
+    address: str
+    government_id_type: str
+    government_id_number: str
+    license_number: str
+    status: str
+    assigned_centre_id: Optional[int] = None
+    centre_name: Optional[str] = None
+    centre_code: Optional[str] = None
+    centre_district: Optional[str] = None
+    category_id: Optional[int] = None
+    category_name: Optional[str] = None
+    daily_capacity_quintals: Optional[float] = 500.0
+    daily_requirements: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account_no: Optional[str] = None
+    ifsc_code: Optional[str] = None
+    is_email_verified: bool = True
+    rejection_reason: Optional[str] = None
+    verification_documents: Optional[dict] = None
+
+
 

@@ -126,3 +126,168 @@ async function markAllNotificationsRead() {
   }
 }
 
+function formatNotificationMessage(msg) {
+  if (!msg) return '';
+  const lines = msg.split('\n');
+  if (lines.length > 1) {
+    return lines.map(line => {
+      const parts = line.split(':');
+      if (parts.length >= 2) {
+        const key = parts[0];
+        const val = parts.slice(1).join(':');
+        return `<div class="flex items-start justify-between gap-2 py-0.5 border-b border-white/5 last:border-0"><span class="text-slate-400 dark:text-slate-400 font-bold text-[11px]">${escapeHtml(key)}:</span> <span class="font-bold text-white text-[11px] text-right font-mono">${escapeHtml(val.trim())}</span></div>`;
+      }
+      return `<div class="py-0.5">${escapeHtml(line)}</div>`;
+    }).join('');
+  }
+  return escapeHtml(msg);
+}
+
+function showNotificationToast({ title, message, type = 'info', duration = 6000, onClick = null } = {}) {
+  let toastContainer = document.getElementById("sf-toast-container");
+  if (!toastContainer) {
+    toastContainer = document.createElement("div");
+    toastContainer.id = "sf-toast-container";
+    toastContainer.className = "fixed top-5 right-5 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0";
+    document.body.appendChild(toastContainer);
+  }
+
+  const isBooking = (title && (title.includes("Booking") || title.includes("బుకింగ్"))) || type === 'BOOKING';
+  const toast = document.createElement("div");
+  toast.className = `pointer-events-auto flex items-start gap-3 p-4 rounded-2xl bg-slate-900/95 text-white dark:bg-slate-900/95 dark:text-slate-100 shadow-2xl border-2 ${isBooking ? 'border-emerald-500 ring-4 ring-emerald-500/20' : 'border-teal-500'} backdrop-blur-md transform transition-all duration-300 translate-y-[-10px] opacity-0 ${onClick ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : ''}`;
+  if (onClick) {
+    toast.onclick = onClick;
+  }
+
+  toast.innerHTML = `
+    <div class="w-10 h-10 rounded-xl ${isBooking ? 'bg-emerald-600 text-white' : 'bg-teal-600 text-white'} flex items-center justify-center font-bold flex-shrink-0 shadow-lg mt-0.5">
+      <span class="text-lg">${isBooking ? '🔔' : '📢'}</span>
+    </div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center justify-between gap-1 mb-1">
+        <h5 class="text-xs font-black uppercase tracking-wider text-emerald-400">${escapeHtml(title || 'Notification')}</h5>
+        <span class="text-[10px] text-slate-400 font-mono">Just now</span>
+      </div>
+      <div class="text-xs space-y-0.5 bg-black/30 p-2.5 rounded-xl border border-white/10">
+        ${formatNotificationMessage(message)}
+      </div>
+      ${isBooking ? `<div class="mt-2 text-[10px] font-bold text-emerald-300 flex items-center gap-1"><i data-lucide="external-link" class="w-3 h-3"></i> Click to open Bookings</div>` : ''}
+    </div>
+  `;
+
+  toastContainer.appendChild(toast);
+  if (window.lucide) lucide.createIcons();
+
+  requestAnimationFrame(() => {
+    toast.classList.remove("translate-y-[-10px]", "opacity-0");
+    toast.classList.add("translate-y-0", "opacity-100");
+  });
+
+  setTimeout(() => {
+    toast.classList.add("opacity-0", "translate-y-[-10px]");
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, duration);
+}
+window.showNotificationToast = showNotificationToast;
+
+// Real-Time Polling & Deduplication State
+let notificationPollInterval = null;
+let initialNotificationSyncDone = false;
+
+function getSeenNotificationIds() {
+  try {
+    const raw = sessionStorage.getItem("sf_seen_notif_ids");
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function saveSeenNotificationIds(seenSet) {
+  try {
+    sessionStorage.setItem("sf_seen_notif_ids", JSON.stringify(Array.from(seenSet)));
+  } catch (e) {}
+}
+
+async function checkAndProcessNotifications() {
+  if (!state.currentUser || !api || !api.token) return;
+
+  try {
+    const notifsData = await api.getNotifications();
+    const notifs = notifsData.notifications || [];
+    state.unreadNotificationsCount = notifsData.unread_count || 0;
+    state.notifications = notifs;
+    updateNotificationBadgeUI();
+
+    const seenIds = getSeenNotificationIds();
+
+    if (!initialNotificationSyncDone) {
+      // First page load / refresh: record all existing notification IDs so they never duplicate toast on reload
+      notifs.forEach(n => seenIds.add(n.id));
+      saveSeenNotificationIds(seenIds);
+      initialNotificationSyncDone = true;
+      return;
+    }
+
+    // Subsequent polls: detect newly arrived unread notifications
+    let hasNewDealerBooking = false;
+    for (const n of notifs) {
+      if (!seenIds.has(n.id) && !n.is_read) {
+        seenIds.add(n.id);
+        const title = (i18n.currentLang === 'te' ? (n.title_te || n.title) : n.title);
+        const message = (i18n.currentLang === 'te' ? (n.message_te || n.message) : n.message);
+
+        showNotificationToast({
+          title,
+          message,
+          type: n.type,
+          onClick: () => {
+            if (state.currentUser?.role === 'DEALER') {
+              state.setActiveTab('assigned_farmers');
+            } else if (state.currentUser?.role === 'FARMER') {
+              state.setActiveTab('bookings');
+            }
+          }
+        });
+
+        if (state.currentUser?.role === 'DEALER' && (n.type === 'BOOKING' || (title && (title.includes("Booking") || title.includes("బుకింగ్"))))) {
+          hasNewDealerBooking = true;
+        }
+      }
+    }
+
+    saveSeenNotificationIds(seenIds);
+
+    // If new booking arrived for dealer, immediately auto-refresh live views without page refresh
+    if (hasNewDealerBooking && state.currentUser?.role === 'DEALER') {
+      if (typeof refreshDealerAssignedFarmers === 'function') {
+        refreshDealerAssignedFarmers();
+      }
+      if (typeof scheduleRender === 'function') {
+        scheduleRender();
+      }
+    }
+  } catch (err) {
+    // Silent catch for background poll
+  }
+}
+
+function startNotificationPolling() {
+  if (notificationPollInterval) clearInterval(notificationPollInterval);
+  checkAndProcessNotifications();
+  notificationPollInterval = setInterval(checkAndProcessNotifications, 5000);
+}
+window.startNotificationPolling = startNotificationPolling;
+
+function stopNotificationPolling() {
+  if (notificationPollInterval) {
+    clearInterval(notificationPollInterval);
+    notificationPollInterval = null;
+  }
+  initialNotificationSyncDone = false;
+}
+window.stopNotificationPolling = stopNotificationPolling;
+
+

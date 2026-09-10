@@ -122,7 +122,7 @@ function renderReceiptModal() {
 
         <!-- Modal Action Buttons -->
         <div class="grid grid-cols-2 gap-3 mt-5">
-          <button onclick="window.print()" class="btn-agri text-xs font-black py-2.5 shadow-md flex items-center justify-center gap-1.5">
+          <button onclick="printReceiptSlip()" class="btn-agri text-xs font-black py-2.5 shadow-md flex items-center justify-center gap-1.5">
             <i data-lucide="printer" class="w-4 h-4"></i> Print Receipt
           </button>
           <button onclick="closeReceiptModal()" class="bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-black rounded-xl text-xs py-2.5 hover:bg-slate-300 dark:hover:bg-slate-700 transition">
@@ -133,4 +133,8 @@ function renderReceiptModal() {
       </div>
     </div>
   `;
+}
+
+function printReceiptSlip() {
+  window.print();
 }

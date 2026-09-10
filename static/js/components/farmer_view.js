@@ -101,6 +101,8 @@ async function renderFarmerView() {
     return emailBanner + (await renderMyBookingsPage());
   } else if (activeTab === 'center_status') {
     return emailBanner + (await renderCenterStatusPage());
+  } else if (activeTab === 'profile') {
+    return emailBanner + (await renderFarmerProfilePage());
   }
 
   // Default Home Dashboard View
@@ -115,9 +117,16 @@ async function renderFarmerView() {
           <span class="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-extrabold uppercase tracking-wider mb-2 inline-block">
             Telangana State Paddy & Produce Procurement Portal
           </span>
-          <h2 class="text-2xl sm:text-3xl font-extrabold mb-1">
-            ${i18n.t('welcome_farmer')}, ${user.name}!
-          </h2>
+          <div class="flex flex-wrap items-center gap-3 mb-1">
+            <h2 class="text-2xl sm:text-3xl font-extrabold cursor-pointer hover:text-amber-200 transition" onclick="state.setActiveTab('profile')" title="Click to view & edit your profile">
+              ${i18n.t('welcome_farmer')}, <span class="underline decoration-amber-300/60 hover:decoration-amber-300">${escapeHtml(user.name)}</span>!
+            </h2>
+            <button onclick="state.setActiveTab('profile')" class="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:bg-white/40 backdrop-blur-md border border-white/30 text-white text-xs font-black transition flex items-center gap-1.5 shadow-sm hover:scale-105 active:scale-95 cursor-pointer group" title="View & Edit Farmer Profile">
+              <i data-lucide="user" class="w-3.5 h-3.5 text-amber-300"></i>
+              <span>Profile</span>
+              <i data-lucide="pencil" class="w-3 h-3 text-emerald-200 group-hover:text-white transition"></i>
+            </button>
+          </div>
           <p class="text-xs sm:text-sm text-emerald-100 max-w-xl">
             Zero Waiting Time • Guaranteed Minimum Support Price (MSP) • Direct Bank Transfer (DBT)
           </p>
@@ -208,15 +217,53 @@ function handleCenterStatusCardClick() {
   state.setActiveTab('center_status');
 }
 
+let farmerBookingsPollTimer = null;
+
 async function renderMyBookingsPage() {
   try {
+    // Real-time auto-refresh so UPCOMING -> ACTIVE -> EXPIRED transitions reflect without manual page reload
+    if (!farmerBookingsPollTimer) {
+      farmerBookingsPollTimer = setInterval(async () => {
+        if (state.currentUser && state.currentUser.role === 'FARMER' && state.activeTab === 'my_bookings') {
+          invalidateFarmerBookingsCache();
+          scheduleRender();
+        } else {
+          clearInterval(farmerBookingsPollTimer);
+          farmerBookingsPollTimer = null;
+        }
+      }, 10000);
+    }
+
     const bookings = await getCachedFarmerBookings();
     const bookingsList = Array.isArray(bookings) ? bookings : [];
 
-    // Status badge helper with vibrant high-contrast styles
-    function getStatusInfo(status) {
+    // Status badge helper with vibrant high-contrast styles & IST timing states
+    function getStatusInfo(status, timingStatus) {
+      if (status === 'EXPIRED' || timingStatus === 'EXPIRED') {
+        return {
+          label: 'EXPIRED',
+          badgeClass: 'bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-200 border border-rose-300 dark:border-rose-700',
+          icon: 'clock',
+          color: 'rose'
+        };
+      }
+      if (status === 'BOOKED') {
+        if (timingStatus === 'ACTIVE') {
+          return {
+            label: 'ACTIVE NOW',
+            badgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 border border-emerald-400 dark:border-emerald-600 animate-pulse',
+            icon: 'zap',
+            color: 'emerald'
+          };
+        }
+        return {
+          label: 'UPCOMING',
+          badgeClass: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200 border border-blue-300 dark:border-blue-700',
+          icon: 'clock',
+          color: 'blue'
+        };
+      }
       const map = {
-        'BOOKED':                { label: 'WAITING FOR TURN',        badgeClass: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700',   icon: 'clock',           color: 'amber' },
         'ARRIVED':               { label: 'ARRIVED AT CENTRE',       badgeClass: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-700',   icon: 'map-pin',         color: 'amber' },
         'VERIFIED':              { label: 'QR VERIFIED',             badgeClass: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700',  icon: 'shield-check',    color: 'emerald' },
         'PROCUREMENT_STARTED':   { label: 'PROCUREMENT IN PROGRESS', badgeClass: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200 border border-blue-300 dark:border-blue-700', icon: 'loader',          color: 'blue' },
@@ -239,17 +286,20 @@ async function renderMyBookingsPage() {
     }
 
     // Status progress indicator with clear labels
-    function getProgressSteps(status) {
+    function getProgressSteps(status, timingStatus) {
+      if (status === 'EXPIRED' || timingStatus === 'EXPIRED') {
+        return '<div class="flex items-center gap-2 p-2.5 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 rounded-xl text-rose-800 dark:text-rose-200 text-xs font-black"><i data-lucide="clock" class="w-4 h-4 text-rose-600 dark:text-rose-400"></i> Slot Expired — Scheduled slot time window has elapsed</div>';
+      }
+      if (status === 'CANCELLED') {
+        return '<div class="flex items-center gap-2 p-2.5 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 rounded-xl text-rose-800 dark:text-rose-200 text-xs font-black"><i data-lucide="x-circle" class="w-4 h-4 text-rose-600 dark:text-rose-400"></i> Booking Cancelled</div>';
+      }
       const steps = [
-        { code: 'BOOKED', label: 'Booked' },
+        { code: 'BOOKED', label: timingStatus === 'ACTIVE' ? 'Active Now' : 'Upcoming' },
         { code: 'ARRIVED', label: 'Arrived' },
         { code: 'VERIFIED', label: 'Verified' },
         { code: 'PROCUREMENT_STARTED', label: 'Weighing' },
         { code: 'PROCUREMENT_COMPLETED', label: 'Completed' }
       ];
-      if (status === 'CANCELLED') {
-        return '<div class="flex items-center gap-2 p-2.5 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 rounded-xl text-rose-800 dark:text-rose-200 text-xs font-black"><i data-lucide="x-circle" class="w-4 h-4 text-rose-600 dark:text-rose-400"></i> Booking Cancelled</div>';
-      }
       const stepCodes = steps.map(s => s.code);
       const currentIdx = stepCodes.indexOf(status);
 
@@ -262,13 +312,13 @@ async function renderMyBookingsPage() {
 
         html += '<div class="flex flex-col items-center z-10">';
         html += '<div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black transition-all ' +
-          (isCurrent ? 'bg-amber-500 text-white ring-4 ring-amber-200 dark:ring-amber-900/60 shadow-md scale-110' :
+          (isCurrent ? (timingStatus === 'ACTIVE' ? 'bg-emerald-600 text-white ring-4 ring-emerald-200 dark:ring-emerald-900/60 shadow-md scale-110 animate-pulse' : 'bg-blue-600 text-white ring-4 ring-blue-200 dark:ring-blue-900/60 shadow-md scale-110') :
            filled ? 'bg-emerald-600 text-white shadow-sm' :
            'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-600') + '">';
         html += checked ? '✓' : String(i + 1);
         html += '</div>';
         html += '<span class="text-[10px] sm:text-[11px] font-black mt-1.5 ' +
-          (isCurrent ? 'text-amber-700 dark:text-amber-400 font-extrabold' :
+          (isCurrent ? (timingStatus === 'ACTIVE' ? 'text-emerald-700 dark:text-emerald-400 font-extrabold' : 'text-blue-700 dark:text-blue-400 font-extrabold') :
            filled ? 'text-emerald-700 dark:text-emerald-400 font-bold' :
            'text-slate-500 dark:text-slate-400 font-medium') + '">' + steps[i].label + '</span>';
         html += '</div>';
@@ -282,8 +332,10 @@ async function renderMyBookingsPage() {
     }
 
     function buildBookingCard(b) {
-      const si = getStatusInfo(b.status);
-      const isActive = !['CANCELLED','PROCUREMENT_COMPLETED'].includes(b.status);
+      const si = getStatusInfo(b.status, b.timing_status);
+      const isExpired = (b.status === 'EXPIRED' || b.timing_status === 'EXPIRED');
+      const isCompleted = (b.status === 'PROCUREMENT_COMPLETED' || b.status === 'COMPLETED');
+      const isActive = !isExpired && !['CANCELLED','PROCUREMENT_COMPLETED'].includes(b.status);
       const cardBorder = si.color === 'emerald' ? 'border-emerald-400 dark:border-emerald-600 shadow-emerald-500/10'
         : si.color === 'amber' ? 'border-amber-400 dark:border-amber-600 shadow-amber-500/10'
         : si.color === 'blue' ? 'border-blue-400 dark:border-blue-600 shadow-blue-500/10'
@@ -374,7 +426,7 @@ async function renderMyBookingsPage() {
       // Progress Tracker Section
       card += '<div class="pt-2 border-t border-slate-100 dark:border-slate-800">';
       card += '<p class="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Booking Status Progress</p>';
-      card += getProgressSteps(b.status);
+      card += getProgressSteps(b.status, b.timing_status);
       card += '</div>';
 
       // Action Buttons for Active Bookings
@@ -395,6 +447,11 @@ async function renderMyBookingsPage() {
         card += '<button onclick="state.setActiveTab(\'live_queue\')" class="px-4 py-2.5 text-xs sm:text-sm font-black text-amber-900 dark:text-amber-200 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950 dark:hover:bg-amber-900 border-2 border-amber-300 dark:border-amber-700 rounded-xl transition flex items-center justify-center gap-2 shadow-sm">';
         card += '<i data-lucide="clock" class="w-4 h-4 text-amber-700 dark:text-amber-400"></i> Live Queue</button>';
         card += '</div>';
+      } else if (isExpired) {
+        card += '<div class="flex items-center gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">';
+        card += '<button onclick="state.setActiveTab(\'book_slot\')" class="btn-agri bg-rose-600 hover:bg-rose-700 text-xs sm:text-sm font-black py-2.5 px-4 flex-1 shadow-md flex items-center justify-center gap-2">';
+        card += '<i data-lucide="calendar-plus" class="w-4 h-4"></i> Book New Replacement Slot</button>';
+        card += '</div>';
       }
 
       // Booked timestamp footer
@@ -409,7 +466,7 @@ async function renderMyBookingsPage() {
 
     if (bookingsList.length === 0) {
       return `
-        <div class="space-y-6">
+        <div class="space-y-6 animate-fade-in">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <button onclick="state.setActiveTab('home')" class="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 transition shadow-sm">
@@ -436,13 +493,13 @@ async function renderMyBookingsPage() {
     }
 
     // Count active vs completed
-    const activeCount = bookingsList.filter(b => !['CANCELLED','PROCUREMENT_COMPLETED'].includes(b.status)).length;
-    const completedCount = bookingsList.filter(b => b.status === 'PROCUREMENT_COMPLETED').length;
+    const activeCount = bookingsList.filter(b => !['CANCELLED','PROCUREMENT_COMPLETED','EXPIRED'].includes(b.status) && b.timing_status !== 'EXPIRED').length;
+    const completedCount = bookingsList.filter(b => b.status === 'PROCUREMENT_COMPLETED' || b.status === 'COMPLETED').length;
 
     const cardsHtml = bookingsList.map(b => buildBookingCard(b)).join('');
 
     return `
-      <div class="space-y-6">
+      <div class="space-y-6 animate-fade-in">
         <!-- Page Header -->
         <div class="flex items-center justify-between flex-wrap gap-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border-2 border-slate-200 dark:border-slate-800 shadow-md">
           <div class="flex items-center gap-3.5">
@@ -682,7 +739,7 @@ async function renderCenterStatusPage() {
             <div>
               <p class="text-xs font-black text-blue-800 dark:text-blue-400 uppercase tracking-wider mb-1">Estimated Waiting Time</p>
               <p class="text-2xl font-black text-blue-900 dark:text-blue-200">${data.estimated_wait_minutes} minutes</p>
-              <p class="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-0.5">Based on weighbridge speed</p>
+              <p class="text-xs text-slate-600 dark:text-slate-400 font-semibold mt-0.5">${data.recent_average_minutes ? `Avg ${data.recent_average_minutes} min/farmer recent speed` : 'Dynamic live estimate'}</p>
             </div>
             <div class="w-12 h-12 rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 flex items-center justify-center font-bold shadow-sm">
               <i data-lucide="clock" class="w-6 h-6"></i>
@@ -1756,13 +1813,45 @@ async function handleConfirmFarmerAssignment(e) {
 }
 
 
-async function renderLiveQueuePage() {
-  const now = Date.now();
-  if (!cachedLiveQueueData || (now - cachedLiveQueueTime > 15000)) {
+let farmerQueuePollInterval = null;
+
+function startFarmerQueuePolling() {
+  if (farmerQueuePollInterval) return;
+  farmerQueuePollInterval = setInterval(async () => {
+    if (state.activeTab !== 'live_queue' || !state.currentUser || state.currentUser.role !== 'FARMER') {
+      stopFarmerQueuePolling();
+      return;
+    }
     try {
-      cachedLiveQueueData = await api.getLiveQueue();
-      cachedLiveQueueTime = now;
-    } catch (e) { }
+      const fresh = await api.getFarmerLiveQueue();
+      if (fresh) {
+        cachedLiveQueueData = fresh;
+        cachedLiveQueueTime = Date.now();
+        const container = document.getElementById("farmer-live-queue-dynamic-container");
+        if (container) {
+          container.innerHTML = renderFarmerLiveQueueInnerHtml(fresh);
+          if (window.lucide) lucide.createIcons();
+        }
+      }
+    } catch (e) {}
+  }, 3000);
+}
+
+function stopFarmerQueuePolling() {
+  if (farmerQueuePollInterval) {
+    clearInterval(farmerQueuePollInterval);
+    farmerQueuePollInterval = null;
+  }
+}
+
+async function renderLiveQueuePage() {
+  startFarmerQueuePolling();
+  
+  try {
+    cachedLiveQueueData = await api.getFarmerLiveQueue();
+    cachedLiveQueueTime = Date.now();
+  } catch (e) {
+    // Keep cached if network fails
   }
 
   const q = cachedLiveQueueData;
@@ -1771,86 +1860,167 @@ async function renderLiveQueuePage() {
       <div class="glass-card p-8 text-center max-w-lg mx-auto py-12">
         <i data-lucide="clock-4" class="w-16 h-16 text-slate-300 mx-auto mb-3"></i>
         <h3 class="font-bold text-lg text-slate-900 dark:text-white">No Active Queue Ticket</h3>
-        <p class="text-xs text-slate-500 mb-5">Book a slot to get your real-time token and live queue position.</p>
+        <p class="text-xs text-slate-500 mb-5">Book a slot with an authorized dealer to get your real-time token and live queue tracking.</p>
         <button onclick="state.setActiveTab('book_slot')" class="btn-agri text-xs">
           ${i18n.t('nav_book_slot')}
         </button>
       </div>
     `;
   }
+
   return `
-    <div class="max-w-2xl mx-auto space-y-6">
-      
-      <div class="glass-card p-5 border-l-4 border-amber-500 flex items-center justify-between">
-        <div>
-          <h2 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <i data-lucide="clock" class="w-6 h-6 text-amber-500"></i>
-            ${i18n.t('live_queue_title')}
-          </h2>
-          <p class="text-xs text-slate-500">${escapeHtml(q.centre_name)}</p>
-        </div>
-        <button onclick="cachedLiveQueueTime = 0; renderApp()" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 text-xs font-bold flex items-center gap-1">
-          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Refresh Live
-        </button>
-      </div>
-
-      <!-- Main Live Queue Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        
-        <!-- Farmer's Token Card -->
-        <div class="agri-gradient text-white p-6 rounded-2xl shadow-xl text-center relative overflow-hidden">
-          <span class="text-xs font-extrabold uppercase tracking-widest text-emerald-200 block mb-1">
-            ${i18n.t('your_token')}
-          </span>
-          <h3 class="text-4xl font-black font-mono tracking-tight">${escapeHtml(q.token_number)}</h3>
-          <p class="text-xs text-emerald-100 mt-2 font-medium">${escapeHtml(q.crop_type)} (${q.expected_quantity} Q)</p>
-        </div>
-
-        <!-- Current Serving Token Card -->
-        <div class="gold-gradient text-white p-6 rounded-2xl shadow-xl text-center relative overflow-hidden">
-          <span class="text-xs font-extrabold uppercase tracking-widest text-amber-100 block mb-1">
-            ${i18n.t('current_token_serving')}
-          </span>
-          <h3 class="text-4xl font-black font-mono tracking-tight pulse-badge inline-block px-4 py-1 bg-white/20 rounded-xl">
-            ${escapeHtml(q.current_token)}
-          </h3>
-          <p class="text-xs text-amber-100 mt-2 font-medium">Weighbridge Station #1 Active</p>
-        </div>
-
-      </div>
-
-      <!-- Queue Progress Metrics -->
-      <div class="glass-card p-6 space-y-4">
-        
-        <div class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 flex items-center justify-center font-black">
-              ${q.farmers_ahead}
-            </div>
-            <div>
-              <span class="font-bold text-sm text-slate-900 dark:text-white block">${i18n.t('farmers_ahead')}</span>
-              <span class="text-xs text-slate-500">Position in sequence</span>
-            </div>
-          </div>
-          
-          <div class="text-right">
-            <span class="text-xl font-extrabold text-amber-600 font-mono block">~${q.estimated_wait_minutes} ${i18n.t('minutes')}</span>
-            <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">${i18n.t('est_wait_time')}</span>
-          </div>
-        </div>
-
-        ${q.farmers_ahead <= 3 ? `
-          <div class="p-4 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 rounded-xl border border-emerald-300 dark:border-emerald-800 text-xs font-bold flex items-center gap-3 animate-pulse">
-            <i data-lucide="bell" class="w-5 h-5 text-emerald-600 flex-shrink-0"></i>
-            <span>${i18n.t('turn_approaching')}</span>
-          </div>
-        ` : ''}
-
-      </div>
-
+    <div id="farmer-live-queue-dynamic-container" class="max-w-2xl mx-auto space-y-6 animate-fade-in">
+      ${renderFarmerLiveQueueInnerHtml(q)}
     </div>
   `;
 }
+
+function renderFarmerLiveQueueInnerHtml(q) {
+  const isYourTurn = q.is_your_turn || (q.current_token && q.current_token === q.token_number) || (q.farmers_ahead === 0 && q.booking_status === 'VERIFIED');
+  const stationName = q.procurement_station || "Station #1";
+  const position = q.your_position || (q.farmers_ahead + 1);
+  const estWait = isYourTurn ? 0 : (q.estimated_wait_minutes || Math.max(0, q.farmers_ahead * (q.recent_average_minutes || 12)));
+  const avgMins = q.recent_average_minutes || 12.0;
+
+  return `
+    <!-- Top Mandi & Station Header -->
+    <div class="glass-card p-5 border-l-4 border-emerald-500 flex flex-wrap items-center justify-between gap-3 shadow-md">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+          <h2 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+            🟢 Live Queue — Farmer View
+          </h2>
+        </div>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+          🏢 ${escapeHtml(q.centre_name || 'Procurement Centre')} • <strong class="text-emerald-600">${escapeHtml(stationName)}</strong>
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="px-2.5 py-1 rounded-full text-xs font-black ${q.queue_status === 'High Congestion' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200'}">
+          ● Queue: ${escapeHtml(q.queue_status || 'Normal')}
+        </span>
+        <button onclick="api.getFarmerLiveQueue().then(fresh => { cachedLiveQueueData = fresh; renderApp(); })" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1 transition shadow-sm" title="Refresh Live Queue">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+
+    ${isYourTurn ? `
+      <!-- CALLOUT: YOUR TURN PROMPT -->
+      <div class="p-6 rounded-3xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-2xl border-4 border-emerald-300 ring-4 ring-emerald-500/30 text-center animate-bounce">
+        <div class="w-16 h-16 rounded-2xl bg-white text-emerald-700 flex items-center justify-center font-black text-3xl mx-auto mb-3 shadow-lg">
+          📢
+        </div>
+        <h3 class="text-2xl sm:text-3xl font-black tracking-tight mb-1">
+          🟢 YOUR TURN — Please proceed to ${escapeHtml(stationName)}
+        </h3>
+        <p class="text-sm font-bold text-emerald-100">
+          Token <strong>${escapeHtml(q.token_number)}</strong> is currently being called. Show your QR Pass at the weighbridge.
+        </p>
+      </div>
+    ` : ''}
+
+    <!-- Main Live Queue Primary Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      
+      <!-- Card 1: Your Token -->
+      <div class="agri-gradient text-white p-6 rounded-3xl shadow-xl text-center relative overflow-hidden flex flex-col justify-between">
+        <div>
+          <span class="text-xs font-extrabold uppercase tracking-widest text-emerald-200 block mb-1">
+            Your Token
+          </span>
+          <h3 class="text-4xl sm:text-5xl font-black font-mono tracking-tight my-1">${escapeHtml(q.token_number)}</h3>
+          <p class="text-xs text-emerald-100 mt-1 font-semibold">🌾 ${escapeHtml(q.crop_type || 'Produce')} (${q.expected_quantity || 0} Q)</p>
+        </div>
+        <div class="mt-4 pt-3 border-t border-white/20 text-xs font-medium text-emerald-100 flex items-center justify-between">
+          <span>Booking ID:</span>
+          <span class="font-mono font-bold">${escapeHtml(q.booking_code || '')}</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Currently Serving Token -->
+      <div class="gold-gradient text-white p-6 rounded-3xl shadow-xl text-center relative overflow-hidden flex flex-col justify-between">
+        <div>
+          <span class="text-xs font-extrabold uppercase tracking-widest text-amber-100 block mb-1">
+            Currently Serving
+          </span>
+          <div class="inline-block px-5 py-1.5 bg-white/20 backdrop-blur-md rounded-2xl border border-white/30 my-1 shadow-inner">
+            <h3 class="text-4xl sm:text-5xl font-black font-mono tracking-tight text-white animate-pulse">
+              ${escapeHtml(q.currently_serving_token || q.current_token || 'Standby')}
+            </h3>
+          </div>
+          <p class="text-xs text-amber-100 mt-1 font-bold">🏢 Weighbridge ${escapeHtml(stationName)}</p>
+        </div>
+        <div class="mt-4 pt-3 border-t border-white/20 text-xs font-medium text-amber-100 flex items-center justify-between">
+          <span>Status:</span>
+          <span class="font-bold uppercase tracking-wider">${isYourTurn ? 'Your Turn Now ✓' : 'In Service ⚡'}</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Live Position & Recalculated Wait ETA Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      
+      <!-- Metric 1: Farmers Ahead -->
+      <div class="glass-card p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Farmers Ahead</span>
+        <div class="text-3xl font-black font-mono text-amber-600 dark:text-amber-400">
+          ${q.farmers_ahead}
+        </div>
+        <span class="text-[10px] text-slate-400 font-medium">ahead in queue</span>
+      </div>
+
+      <!-- Metric 2: Your Position -->
+      <div class="glass-card p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Your Position</span>
+        <div class="text-3xl font-black font-mono text-emerald-600 dark:text-emerald-400">
+          #${position}
+        </div>
+        <span class="text-[10px] text-slate-400 font-medium">${position === 1 ? 'Next in line' : 'In sequence'}</span>
+      </div>
+
+      <!-- Metric 3: Estimated Waiting Time (Dynamic Rolling Avg) -->
+      <div class="glass-card p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Estimated Wait</span>
+        <div class="text-3xl font-black font-mono text-slate-900 dark:text-white">
+          ~${estWait} <span class="text-base font-bold text-slate-500">min</span>
+        </div>
+        <span class="text-[10px] text-slate-400 font-bold block">Rolling avg: ${avgMins}m / farmer</span>
+      </div>
+
+    </div>
+
+    <!-- Live Queue Calculation Breakdown Box -->
+    <div class="glass-card p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 space-y-3">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="calculator" class="w-4 h-4 text-emerald-600"></i>
+          <span class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">
+            Real-Time Dynamic Recalculation Engine
+          </span>
+        </div>
+        <span class="text-[10px] font-mono text-emerald-600 font-bold">Backend Sync Active (3s)</span>
+      </div>
+
+      <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+        Estimated wait is dynamically recalculated from real completed procurement turnaround times (${avgMins} mins/farmer) × ${q.farmers_ahead} farmers ahead. When the dealer completes a farmer, your position and wait time update immediately in real time.
+      </p>
+
+      <div class="p-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div class="flex items-center gap-2">
+          <span class="text-slate-400">Formula:</span>
+          <span class="font-mono font-bold text-slate-800 dark:text-slate-200">${q.farmers_ahead} ahead × ${avgMins}m avg</span>
+        </div>
+        <div class="font-bold text-emerald-700 dark:text-emerald-300">
+          = ~${estWait} minutes dynamic wait
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 
 async function renderFarmerReceiptsPage() {
   const now = Date.now();
@@ -2028,3 +2198,345 @@ async function renderFarmerPaymentsPage() {
   // Seamlessly render the unified Transactions & Payments page
   return await renderFarmerReceiptsPage();
 }
+
+// ==========================================
+// DEDICATED FARMER PROFILE PAGE
+// ==========================================
+async function renderFarmerProfilePage() {
+  let profile = null;
+  const user = state.currentUser || {};
+  const fp = user.farmer_profile || {};
+
+  try {
+    profile = await api.getFarmerProfile();
+  } catch (err) {
+    console.warn("Could not fetch fresh farmer profile from API, fallback to current user state:", err);
+    profile = {
+      id: user.id || 1,
+      name: user.name || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      role: user.role || "FARMER",
+      is_email_verified: Boolean(user.is_email_verified),
+      address: fp.address || "",
+      village: fp.village || "",
+      district: fp.district || "",
+      state: fp.state || "Telangana",
+      land_size_acres: fp.land_size_acres || 2.5,
+      bank_name: fp.bank_name || "",
+      bank_account_no: fp.bank_account_no || "",
+      ifsc_code: fp.ifsc_code || "",
+      aadhaar_last4: fp.aadhaar_last4 || "1024"
+    };
+  }
+
+  return `
+    <div class="max-w-3xl mx-auto space-y-6 animate-fade-in">
+      
+      <!-- Top Navigation -->
+      <div class="flex items-center justify-between gap-3">
+        <button onclick="state.setActiveTab('home')" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-sm border-2 border-slate-200 dark:border-slate-700 shadow-sm transition">
+          <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Dashboard
+        </button>
+
+        <div class="flex items-center gap-2">
+          <span class="px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-black bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 border-2 border-emerald-400/60 dark:border-emerald-700 flex items-center gap-2 shadow-sm">
+            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i> Verified Farmer Profile
+          </span>
+        </div>
+      </div>
+
+      <!-- CARD 1: Farmer Header Card Banner (Highlighted with enhanced typography) -->
+      <div class="agri-gradient text-white p-6 sm:p-8 rounded-3xl shadow-2xl border-2 border-emerald-300/40 dark:border-emerald-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative overflow-hidden backdrop-blur-md">
+        <div class="z-10 space-y-2">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <h2 class="text-2xl sm:text-3xl font-black tracking-tight drop-shadow-sm">${escapeHtml(profile.name || 'Farmer')}</h2>
+            ${profile.is_email_verified ? `
+              <span class="px-3 py-1 rounded-full text-xs font-black bg-white/30 text-white uppercase tracking-wider shadow-xs">
+                ✓ Verified Email
+              </span>
+            ` : ''}
+          </div>
+          <p class="text-sm sm:text-base text-emerald-50 font-medium">
+            🌾 Registered Agricultural Producer • ${escapeHtml(profile.district ? profile.district + ', ' : '')}Telangana
+          </p>
+          <div class="inline-flex items-center gap-2 bg-black/25 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/20 text-xs sm:text-sm text-emerald-100 font-mono font-bold shadow-inner">
+            <span>Farmer ID: <strong class="text-amber-300">#FAR-${profile.id}</strong></span>
+            <span class="opacity-60">•</span>
+            <span>Land: <strong class="text-amber-300">${profile.land_size_acres || 2.5} Acres</strong></span>
+          </div>
+        </div>
+
+        <div class="z-10 flex-shrink-0 self-stretch sm:self-auto">
+          <div class="bg-black/25 backdrop-blur-md p-4 rounded-2xl border-2 border-white/25 text-center shadow-lg">
+            <span class="text-xs uppercase font-extrabold text-emerald-200 block tracking-wider">Direct Benefit Transfer (DBT)</span>
+            <span class="font-black text-sm sm:text-base text-white flex items-center justify-center gap-1.5 mt-1">
+              <i data-lucide="check-circle" class="w-4 h-4 text-emerald-300"></i> Aadhaar Linked
+            </span>
+          </div>
+        </div>
+
+        <div class="absolute right-0 bottom-0 opacity-10 font-black text-9xl pointer-events-none select-none">🌾</div>
+      </div>
+
+      <!-- CARD 2: Farmer Profile Form Card (Highlighted with clean borders & larger readable text) -->
+      <div class="bg-white/95 dark:bg-slate-900/95 rounded-3xl border-2 border-emerald-500/40 dark:border-emerald-600/40 shadow-2xl overflow-hidden backdrop-blur-sm">
+        
+        <form id="farmer-profile-form" onsubmit="handleSaveFarmerProfile(event)" class="p-6 sm:p-9 space-y-7">
+          
+          <div id="farmer-profile-alert" class="hidden p-4 rounded-2xl text-sm sm:text-base font-bold shadow-sm"></div>
+
+          <!-- Section 1: Personal & Contact Information -->
+          <div class="space-y-4">
+            <h3 class="text-sm sm:text-base font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400 flex items-center gap-2.5 border-b-2 border-emerald-100 dark:border-emerald-950 pb-2.5">
+              <i data-lucide="user" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i> Personal &amp; Contact Details
+            </h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+              
+              <!-- Farmer ID (Read-only system controlled) -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-500 dark:text-slate-400 mb-1.5">
+                  Farmer ID (System Generated)
+                </label>
+                <input type="text" value="FAR-${profile.id}" disabled class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 text-sm sm:text-base font-mono font-bold cursor-not-allowed">
+              </div>
+
+              <!-- Full Name (Editable) -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">
+                  Farmer Full Name *
+                </label>
+                <input type="text" id="fp-name" required value="${escapeHtml(profile.name || '')}" placeholder="Enter full legal name" class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition">
+              </div>
+
+              <!-- Mobile Number (Editable) -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">
+                  Mobile Number (10 Digits) *
+                </label>
+                <input type="tel" id="fp-phone" required pattern="[0-9]{10}" value="${escapeHtml(profile.phone || '')}" placeholder="9876543210" class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition font-mono">
+              </div>
+
+              <!-- Email Address (Editable) -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">
+                  Email Address *
+                </label>
+                <input type="email" id="fp-email" required value="${escapeHtml(profile.email || '')}" placeholder="farmer@example.com" class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition">
+              </div>
+
+              <!-- Aadhaar Last 4 Digits (Read-only system controlled) -->
+              <div class="sm:col-span-2">
+                <label class="block text-xs sm:text-sm font-bold text-slate-500 dark:text-slate-400 mb-1.5">
+                  Aadhaar Verification (Government Protected)
+                </label>
+                <div class="flex items-center gap-2.5 p-3 rounded-xl border-2 border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/40 text-slate-700 dark:text-slate-200 text-sm font-mono font-semibold">
+                  <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+                  <span>XXXX-XXXX-${escapeHtml(profile.aadhaar_last4 || '1024')}</span>
+                  <span class="ml-auto text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-200/70 dark:bg-emerald-900 px-2.5 py-1 rounded-lg">Verified UIDAI</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Section 2: Farm Location & Land Area -->
+          <div class="space-y-4 pt-3">
+            <h3 class="text-sm sm:text-base font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400 flex items-center gap-2.5 border-b-2 border-emerald-100 dark:border-emerald-950 pb-2.5">
+              <i data-lucide="map-pin" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i> Farm Location &amp; Land Holdings
+            </h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
+              
+              <!-- State (Read-only) -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-500 dark:text-slate-400 mb-1.5">State</label>
+                <input type="text" value="${escapeHtml(profile.state || 'Telangana')}" disabled class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 text-sm sm:text-base font-bold cursor-not-allowed">
+              </div>
+
+              <!-- District -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">District *</label>
+                <input type="text" id="fp-district" required value="${escapeHtml(profile.district || '')}" placeholder="Warangal / Srikakulam / etc." class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition">
+              </div>
+
+              <!-- Village / Town -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">Village / Mandal *</label>
+                <input type="text" id="fp-village" required value="${escapeHtml(profile.village || '')}" placeholder="Enter village or mandal" class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition">
+              </div>
+
+              <!-- Land Size (Acres) -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">Land Holding (Acres) *</label>
+                <input type="number" step="0.1" min="0.1" max="500" id="fp-land" required value="${profile.land_size_acres || 2.5}" class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition font-mono">
+              </div>
+
+              <!-- Farm Address -->
+              <div class="sm:col-span-2">
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">Farm / Residential Address</label>
+                <input type="text" id="fp-address" value="${escapeHtml(profile.address || '')}" placeholder="House no, street, locality" class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition">
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Section 3: DBT Bank Account Information -->
+          <div class="space-y-4 pt-3">
+            <h3 class="text-sm sm:text-base font-black uppercase tracking-wider text-emerald-800 dark:text-emerald-400 flex items-center gap-2.5 border-b-2 border-emerald-100 dark:border-emerald-950 pb-2.5">
+              <i data-lucide="landmark" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i> DBT Direct Bank Transfer Account
+            </h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
+              
+              <!-- Bank Name -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">Bank Name</label>
+                <input type="text" id="fp-bank-name" value="${escapeHtml(profile.bank_name || '')}" placeholder="State Bank of India" class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition">
+              </div>
+
+              <!-- Bank Account Number -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">Bank Account Number</label>
+                <input type="text" id="fp-bank-acc" value="${escapeHtml(profile.bank_account_no || '')}" placeholder="Account Number" class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition font-mono">
+              </div>
+
+              <!-- IFSC Code -->
+              <div>
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">IFSC Code</label>
+                <input type="text" id="fp-ifsc" value="${escapeHtml(profile.ifsc_code || '')}" placeholder="SBIN0001234" class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition font-mono uppercase">
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Form Action Buttons -->
+          <div class="pt-5 border-t-2 border-slate-100 dark:border-slate-800 flex items-center justify-end gap-3.5 flex-wrap">
+            <button type="button" onclick="state.setActiveTab('home')" class="px-6 py-3 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+              Cancel
+            </button>
+            <button type="submit" id="fp-save-btn" class="btn-agri text-sm sm:text-base font-black px-8 py-3.5 shadow-2xl flex items-center gap-2 hover:scale-[1.02] active:scale-95 transition-all">
+              <i data-lucide="save" class="w-4 h-4"></i> Save &amp; Update Profile
+            </button>
+          </div>
+
+        </form>
+
+      </div>
+
+    </div>
+  `;
+}
+
+async function handleSaveFarmerProfile(e) {
+  e.preventDefault();
+  const alertEl = document.getElementById("farmer-profile-alert");
+  const saveBtn = document.getElementById("fp-save-btn");
+
+  const name = document.getElementById("fp-name")?.value.trim();
+  const phone = document.getElementById("fp-phone")?.value.trim();
+  const email = document.getElementById("fp-email")?.value.trim();
+  const district = document.getElementById("fp-district")?.value.trim();
+  const village = document.getElementById("fp-village")?.value.trim();
+  const address = document.getElementById("fp-address")?.value.trim();
+  const landSize = parseFloat(document.getElementById("fp-land")?.value || 2.5);
+  const bankName = document.getElementById("fp-bank-name")?.value.trim();
+  const bankAcc = document.getElementById("fp-bank-acc")?.value.trim();
+  const ifsc = document.getElementById("fp-ifsc")?.value.trim().toUpperCase();
+
+  if (!name || name.length < 2) {
+    if (alertEl) {
+      alertEl.className = "p-4 rounded-2xl text-xs sm:text-sm font-bold bg-rose-50 text-rose-700 border border-rose-200";
+      alertEl.textContent = "Please enter a valid full name (minimum 2 characters).";
+      alertEl.classList.remove("hidden");
+    }
+    return;
+  }
+
+  const phoneDigits = phone.replace(/\D/g, "");
+  if (phoneDigits.length < 10) {
+    if (alertEl) {
+      alertEl.className = "p-4 rounded-2xl text-xs sm:text-sm font-bold bg-rose-50 text-rose-700 border border-rose-200";
+      alertEl.textContent = "Please enter a valid 10-digit mobile number.";
+      alertEl.classList.remove("hidden");
+    }
+    return;
+  }
+
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Saving Profile Changes...`;
+    if (window.lucide) lucide.createIcons();
+  }
+
+  try {
+    const updated = await api.updateFarmerProfile({
+      name,
+      phone: phoneDigits,
+      email,
+      address,
+      village,
+      district,
+      land_size_acres: landSize,
+      bank_name: bankName,
+      bank_account_no: bankAcc,
+      ifsc_code: ifsc
+    });
+
+    // Update state store immediately
+    if (state.currentUser) {
+      state.currentUser.name = updated.name;
+      state.currentUser.email = updated.email;
+      state.currentUser.phone = updated.phone;
+      if (!state.currentUser.farmer_profile) {
+        state.currentUser.farmer_profile = {};
+      }
+      state.currentUser.farmer_profile.address = updated.address;
+      state.currentUser.farmer_profile.village = updated.village;
+      state.currentUser.farmer_profile.district = updated.district;
+      state.currentUser.farmer_profile.land_size_acres = updated.land_size_acres;
+      state.currentUser.farmer_profile.bank_name = updated.bank_name;
+      state.currentUser.farmer_profile.bank_account_no = updated.bank_account_no;
+      state.currentUser.farmer_profile.ifsc_code = updated.ifsc_code;
+      localStorage.setItem("sf_current_user", JSON.stringify(state.currentUser));
+    }
+
+    if (alertEl) {
+      alertEl.className = "p-4 rounded-2xl text-xs sm:text-sm font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-800";
+      alertEl.textContent = "✓ Profile updated successfully! All changes have been saved to your account.";
+      alertEl.classList.remove("hidden");
+    }
+
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `<i data-lucide="check" class="w-4 h-4 text-emerald-400"></i> Saved ✓`;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    if (typeof showNotificationToast === "function") {
+      showNotificationToast({
+        title: "Profile Updated ✓",
+        message: "Your farmer profile details have been updated successfully.",
+        type: "booking"
+      });
+    }
+
+    // Smoothly refresh after 1s so user sees saved confirmation
+    setTimeout(() => {
+      state.notify();
+    }, 1000);
+
+  } catch (err) {
+    if (alertEl) {
+      alertEl.className = "p-4 rounded-2xl text-xs sm:text-sm font-bold bg-rose-50 text-rose-700 border border-rose-200";
+      alertEl.textContent = err.message || "Failed to update profile. Please check your inputs.";
+      alertEl.classList.remove("hidden");
+    }
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Save &amp; Update Profile`;
+      if (window.lucide) lucide.createIcons();
+    }
+  }
+}

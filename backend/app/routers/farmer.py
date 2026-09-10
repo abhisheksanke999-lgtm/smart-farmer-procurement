@@ -3,23 +3,19 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 import zoneinfo
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ..database import get_db
 from ..models import (
-    User, UserRole, DealerProfile, DealerStatus, ProcurementCentre, Slot, Booking, BookingStatus,
-    QueueEntry, QueueStatus, ProcurementTransaction, Payment, Notification, NotificationType,
+    User, UserRole, FarmerProfile, DealerProfile, DealerStatus, ProcurementCentre, Slot, Booking, BookingStatus,
+    QueueEntry, QueueStatus, ProcurementTransaction, Payment, PaymentStatus, Notification, NotificationType,
     FarmerDealerAssignment, AssignmentStatus, Category
 )
-from ..schemas import SlotBookingCreate, FarmerDealerAssignmentCreate, CategoryOut
+from ..schemas import SlotBookingCreate, FarmerDealerAssignmentCreate, CategoryOut, FarmerProfileOut, FarmerProfileUpdate
 from ..auth import require_farmer, require_user
-
-IST = zoneinfo.ZoneInfo("Asia/Kolkata")
+from ..slot_timing import get_now_ist, is_slot_in_past, get_slot_timing_status, sync_and_expire_bookings, IST
+from ..queue_service import compute_recent_average_duration, get_live_queue_metrics
 
 router = APIRouter(prefix="/api/farmer", tags=["Farmer Module"])
-
-def get_now_ist() -> datetime:
-    """Returns the current datetime in Indian Standard Time (Asia/Kolkata)."""
-    return datetime.now(IST)
 
 def is_slot_in_past(slot_date_str: str, end_time_str: str) -> bool:
     """Checks whether a given slot date and end time has already elapsed in Indian Standard Time."""
@@ -148,7 +144,15 @@ def get_dealers_for_centre(
         else:
             return []
 
-    dealers = query.all()
+    dealers = (
+        query
+        .options(
+            joinedload(DealerProfile.user),
+            joinedload(DealerProfile.assigned_centre),
+            joinedload(DealerProfile.category)
+        )
+        .all()
+    )
     res = []
     for d in dealers:
         centre = d.assigned_centre
@@ -386,10 +390,10 @@ def create_farmer_dealer_assignment(
 
     db.add(Notification(
         user_id=dealer_user.id,
-        title=f"New Farmer Assignment: {current_user.name}",
-        title_te=f"కొత్త రైతు కేటాయింపు: {current_user.name}",
-        message=f"Farmer {current_user.name} assigned you as their procurement dealer for {clean_crop} ({req.expected_quantity_quintals} Q) at {centre.name}. Token: {token_number}.",
-        message_te=f"రైతు {current_user.name} మీ డీలర్‌షిప్‌ను ఎంచుకున్నారు.",
+        title="🔔 New booking received",
+        title_te="🔔 కొత్త బుకింగ్ వచ్చింది",
+        message=f"Farmer: {current_user.name}\nDate: {slot.date}\nTime: {slot.start_time}–{slot.end_time}\nBooking ID: {booking_code}\nProduct: {clean_crop} ({req.expected_quantity_quintals} Q)\nToken: {token_number}",
+        message_te=f"రైతు: {current_user.name}\nతేదీ: {slot.date}\nసమయం: {slot.start_time}–{slot.end_time}\nబుకింగ్ ఐడి: {booking_code}\nపంట: {clean_crop} ({req.expected_quantity_quintals} Q)\nటోకెన్: {token_number}",
         type=NotificationType.BOOKING
     ))
 
@@ -414,9 +418,16 @@ def create_farmer_dealer_assignment(
 
 @router.get("/active-assignment")
 def get_farmer_active_assignment(current_user: User = Depends(require_farmer), db: Session = Depends(get_db)):
-    """Returns the farmer's active dealer assignments."""
+    """Returns the farmer's active dealer assignments, syncing expired slots first."""
+    sync_and_expire_bookings(db, farmer_id=current_user.id)
+
     assignments = (
         db.query(FarmerDealerAssignment)
+        .options(
+            joinedload(FarmerDealerAssignment.booking).joinedload(Booking.slot),
+            joinedload(FarmerDealerAssignment.centre),
+            joinedload(FarmerDealerAssignment.dealer).joinedload(User.dealer_profile)
+        )
         .filter(
             FarmerDealerAssignment.farmer_id == current_user.id,
             FarmerDealerAssignment.status == AssignmentStatus.ACTIVE
@@ -475,11 +486,11 @@ def cancel_farmer_assignment(assignment_id: int, current_user: User = Depends(re
         raise HTTPException(status_code=400, detail=f"Cannot cancel assignment with status '{assignment.status}'.")
 
     assignment.status = AssignmentStatus.CANCELLED
-    assignment.updated_at = datetime.utcnow()
+    assignment.updated_at = datetime.now(IST).replace(tzinfo=None)
 
     if assignment.booking:
         assignment.booking.status = BookingStatus.CANCELLED
-        assignment.booking.updated_at = datetime.utcnow()
+        assignment.booking.updated_at = datetime.now(IST).replace(tzinfo=None)
         if assignment.booking.slot:
             assignment.booking.slot.booked_count = max(0, assignment.booking.slot.booked_count - 1)
         if assignment.booking.queue_entry:
@@ -570,7 +581,8 @@ def get_available_slots(centre_id: int, date: Optional[str] = None, db: Session 
 
     res = []
     for s in slots:
-        is_past = is_slot_in_past(s.date, s.end_time)
+        timing_status = get_slot_timing_status(s.date, s.start_time, s.end_time)
+        is_past = (timing_status == "EXPIRED")
         available = max(0, s.capacity - s.booked_count) if not is_past else 0
         is_full = (s.booked_count >= s.capacity) or is_past
 
@@ -584,7 +596,8 @@ def get_available_slots(centre_id: int, date: Optional[str] = None, db: Session 
             "booked_count": s.booked_count,
             "available_capacity": available,
             "is_full": is_full,
-            "is_past": is_past
+            "is_past": is_past,
+            "timing_status": timing_status
         })
     return res
 
@@ -719,6 +732,19 @@ def book_slot(booking_in: SlotBookingCreate, current_user: User = Depends(requir
         type=NotificationType.BOOKING
     ))
 
+    # Add notification for dealer if assigned
+    if booking_in.dealer_id:
+        dealer_user = db.query(User).filter(User.id == booking_in.dealer_id).first()
+        if dealer_user:
+            db.add(Notification(
+                user_id=dealer_user.id,
+                title="🔔 New booking received",
+                title_te="🔔 కొత్త బుకింగ్ వచ్చింది",
+                message=f"Farmer: {current_user.name}\nDate: {slot.date}\nTime: {slot.start_time}–{slot.end_time}\nBooking ID: {booking_code}\nProduct: {clean_crop} ({booking_in.expected_quantity_quintals} Q)\nToken: {token_number}",
+                message_te=f"రైతు: {current_user.name}\nతేదీ: {slot.date}\nసమయం: {slot.start_time}–{slot.end_time}\nబుకింగ్ ఐడి: {booking_code}\nపంట: {clean_crop} ({booking_in.expected_quantity_quintals} Q)\nటోకెన్: {token_number}",
+                type=NotificationType.BOOKING
+            ))
+
     db.commit()
 
     return {
@@ -734,9 +760,27 @@ def book_slot(booking_in: SlotBookingCreate, current_user: User = Depends(requir
 
 @router.get("/bookings")
 def get_farmer_bookings(current_user: User = Depends(require_farmer), db: Session = Depends(get_db)):
-    bookings = db.query(Booking).filter(Booking.farmer_id == current_user.id).order_by(Booking.created_at.desc()).all()
+    # Automatically sync and expire past slots in database
+    sync_and_expire_bookings(db, farmer_id=current_user.id)
+
+    bookings = (
+        db.query(Booking)
+        .options(
+            joinedload(Booking.slot),
+            joinedload(Booking.centre),
+            joinedload(Booking.assigned_dealer).joinedload(User.dealer_profile),
+            joinedload(Booking.assignment)
+        )
+        .filter(Booking.farmer_id == current_user.id)
+        .order_by(Booking.created_at.desc())
+        .all()
+    )
     res = []
     for b in bookings:
+        timing_status = "UPCOMING"
+        if b.slot:
+            timing_status = get_slot_timing_status(b.slot.date, b.slot.start_time, b.slot.end_time)
+
         res.append({
             "id": b.id,
             "booking_code": b.booking_code,
@@ -744,6 +788,7 @@ def get_farmer_bookings(current_user: User = Depends(require_farmer), db: Sessio
             "crop_type": b.crop_type,
             "expected_quantity_quintals": b.expected_quantity_quintals,
             "status": b.status,
+            "timing_status": timing_status,
             "centre_name": b.centre.name if b.centre else "",
             "centre_location": b.centre.location if b.centre else "",
             "dealer_id": b.dealer_id,
@@ -775,41 +820,48 @@ def get_live_queue(booking_code: Optional[str] = None, current_user: User = Depe
         }
 
     centre_id = booking.centre_id
-    current_token_entry = db.query(QueueEntry).filter(
-        QueueEntry.centre_id == centre_id,
-        QueueEntry.status.in_([QueueStatus.IN_SERVICE, QueueStatus.WAITING])
-    ).order_by(QueueEntry.id.asc()).first()
-
-    waiting_entries = db.query(QueueEntry).filter(
-        QueueEntry.centre_id == centre_id,
-        QueueEntry.status == QueueStatus.WAITING
-    ).order_by(QueueEntry.id.asc()).all()
-
-    my_queue_entry = db.query(QueueEntry).filter(QueueEntry.booking_id == booking.id).first()
-
-    farmers_ahead = 0
-    if my_queue_entry and my_queue_entry.status == QueueStatus.WAITING:
-        for idx, entry in enumerate(waiting_entries):
-            if entry.id == my_queue_entry.id:
-                farmers_ahead = idx
-                break
+    metrics = get_live_queue_metrics(
+        db,
+        centre_id=centre_id,
+        booking_id=booking.id,
+        farmer_id=booking.farmer_id,
+        dealer_id=booking.dealer_id
+    )
 
     return {
         "has_active_booking": True,
         "booking_code": booking.booking_code,
         "token_number": booking.token_number,
-        "centre_name": booking.centre.name,
-        "current_token": current_token_entry.token_number if current_token_entry else "PDC-1000",
-        "farmers_ahead": farmers_ahead,
-        "estimated_wait_minutes": max(5, farmers_ahead * 10),
+        "centre_name": booking.centre.name if booking.centre else "Procurement Centre",
+        "procurement_station": metrics.get("procurement_station", "Station #1"),
+        "current_token": metrics["current_token"],
+        "currently_serving_token": metrics.get("currently_serving_token", metrics["current_token"]),
+        "farmers_ahead": metrics["farmers_ahead"],
+        "your_position": metrics.get("your_position", metrics["farmers_ahead"] + 1),
+        "is_your_turn": metrics.get("is_your_turn", False),
+        "estimated_wait_minutes": metrics["estimated_wait_minutes"],
+        "recent_average_minutes": metrics["recent_average_minutes"],
+        "queue_status": metrics["queue_status"],
         "booking_status": booking.status,
         "crop_type": booking.crop_type,
         "expected_quantity": booking.expected_quantity_quintals
     }
 
+
 @router.get("/receipts")
 def get_farmer_receipts(current_user: User = Depends(require_farmer), db: Session = Depends(get_db)):
-    txns = db.query(ProcurementTransaction).filter(ProcurementTransaction.farmer_id == current_user.id).order_by(ProcurementTransaction.transaction_time.desc()).all()
+    txns = (
+        db.query(ProcurementTransaction)
+        .options(
+            joinedload(ProcurementTransaction.payment),
+            joinedload(ProcurementTransaction.booking).joinedload(Booking.centre),
+            joinedload(ProcurementTransaction.booking).joinedload(Booking.assigned_dealer).joinedload(User.dealer_profile),
+            joinedload(ProcurementTransaction.dealer).joinedload(User.dealer_profile)
+        )
+        .filter(ProcurementTransaction.farmer_id == current_user.id)
+        .order_by(ProcurementTransaction.transaction_time.desc())
+        .all()
+    )
     res = []
     for t in txns:
         payment = t.payment
@@ -916,52 +968,18 @@ def get_procurement_centre_status(
     if not centre:
         raise HTTPException(status_code=404, detail="No active procurement centre found.")
 
-    # Calculate queue and tokens for this centre
-    current_token_entry = db.query(QueueEntry).filter(
-        QueueEntry.centre_id == centre.id,
-        QueueEntry.status.in_([QueueStatus.IN_SERVICE, QueueStatus.WAITING])
-    ).order_by(QueueEntry.id.asc()).first()
+    # Calculate real dynamic queue metrics for this centre
+    metrics = get_live_queue_metrics(db, centre_id=centre.id, farmer_id=current_user.id)
 
-    waiting_entries = db.query(QueueEntry).filter(
-        QueueEntry.centre_id == centre.id,
-        QueueEntry.status == QueueStatus.WAITING
-    ).order_by(QueueEntry.id.asc()).all()
+    procurement_station = f"{centre.name} - Weighbridge Desk #1"
+    time_str = get_now_ist().strftime("%I:%M %p")
 
-    # Check if this farmer has a token at this specific centre
-    farmer_booking_at_centre = db.query(Booking).filter(
-        Booking.farmer_id == current_user.id,
-        Booking.centre_id == centre.id,
-        Booking.status.in_([BookingStatus.BOOKED, BookingStatus.ARRIVED, BookingStatus.VERIFIED, BookingStatus.PROCUREMENT_STARTED])
-    ).order_by(Booking.created_at.desc()).first()
-
-    farmers_ahead = 2 # default demo offset
-    farmer_token = None
-    if farmer_booking_at_centre:
-        farmer_token = farmer_booking_at_centre.token_number
-        my_queue_entry = db.query(QueueEntry).filter(QueueEntry.booking_id == farmer_booking_at_centre.id).first()
-        if my_queue_entry and my_queue_entry.status == QueueStatus.WAITING:
-            for idx, entry in enumerate(waiting_entries):
-                if entry.id == my_queue_entry.id:
-                    farmers_ahead = idx
-                    break
-        elif farmer_booking_at_centre.status == BookingStatus.BOOKED:
-            farmers_ahead = max(1, len(waiting_entries))
-    else:
-        # Check any booking of farmer
-        if farmer_active_booking:
-            farmer_token = farmer_active_booking.token_number
-
-    if not farmer_token:
-        farmer_token = "PDC-1003" # sample reference token if none active
-
-    current_token_val = current_token_entry.token_number if current_token_entry else "PDC-1001"
-
-    # Today's slots calculation
+    # Today's slots calculation from real database
     today_str = get_now_ist().strftime("%Y-%m-%d")
     slots_today = db.query(Slot).filter(Slot.centre_id == centre.id, Slot.date == today_str).all()
-    total_slots = sum(s.capacity for s in slots_today) if slots_today else 30
-    booked_slots = sum(s.booked_count for s in slots_today) if slots_today else 15
-    available_slots = max(0, total_slots - booked_slots) if slots_today else 15
+    total_slots = sum(s.capacity for s in slots_today) if slots_today else (centre.daily_capacity or 50)
+    booked_slots = sum(s.booked_count for s in slots_today) if slots_today else 0
+    available_slots = max(0, total_slots - booked_slots)
 
     # Query registered dealers for this centre
     dealers_query = (
@@ -995,13 +1013,14 @@ def get_procurement_centre_status(
         "is_active": centre.is_active,
         "centre_status_label": "Active" if centre.is_active else "Closed",
         "centre_status_icon": "🟢 Active" if centre.is_active else "🔴 Closed",
-        "current_token": current_token_val,
-        "farmer_token": farmer_token,
-        "has_active_farmer_token": bool(farmer_booking_at_centre or farmer_active_booking),
-        "farmers_ahead": farmers_ahead,
-        "estimated_wait_minutes": max(10, farmers_ahead * 10),
+        "current_token": metrics["current_token"],
+        "farmer_token": metrics["farmer_token"] or "Standby",
+        "has_active_farmer_token": metrics["has_active_farmer_token"],
+        "farmers_ahead": metrics["farmers_ahead"],
+        "estimated_wait_minutes": metrics["estimated_wait_minutes"],
+        "recent_average_minutes": metrics["recent_average_minutes"],
         "procurement_station": procurement_station,
-        "queue_status": queue_status,
+        "queue_status": metrics["queue_status"],
         "today_available_slots": available_slots,
         "today_total_slots": total_slots,
         "slots_display": f"{available_slots} / {total_slots}",
@@ -1012,4 +1031,118 @@ def get_procurement_centre_status(
         "dealers": dealers_list,
         "all_centres": all_centres_list
     }
+
+# ==========================================
+# FARMER PROFILE MANAGEMENT
+# ==========================================
+@router.get("/profile", response_model=FarmerProfileOut)
+def get_farmer_profile(
+    current_user: User = Depends(require_farmer),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the authenticated farmer's complete profile information.
+    Farmer can view their personal, land, location, and DBT bank account details.
+    """
+    fp = current_user.farmer_profile
+    return FarmerProfileOut(
+        id=current_user.id,
+        name=current_user.name,
+        email=current_user.email,
+        phone=current_user.phone,
+        role=current_user.role,
+        is_email_verified=current_user.is_email_verified,
+        address=fp.address if fp else None,
+        village=fp.village if fp else None,
+        district=fp.district if fp else None,
+        state=fp.state if fp else "Telangana",
+        land_size_acres=fp.land_size_acres if fp else 2.5,
+        bank_name=fp.bank_name if fp else None,
+        bank_account_no=fp.bank_account_no if fp else None,
+        ifsc_code=fp.ifsc_code if fp else None,
+        aadhaar_last4=fp.aadhaar_last4 if fp else None
+    )
+
+@router.put("/profile", response_model=FarmerProfileOut)
+def update_farmer_profile(
+    req: FarmerProfileUpdate,
+    current_user: User = Depends(require_farmer),
+    db: Session = Depends(get_db)
+):
+    """
+    Updates the authenticated farmer's profile.
+    Strictly isolated: Farmer can edit ONLY their own profile.
+    Validates email format, 10-digit mobile number, and protects system-controlled fields (ID, verification status).
+    """
+    # 1. Update & validate name
+    if req.name is not None:
+        clean_name = req.name.strip()
+        if len(clean_name) < 2:
+            raise HTTPException(status_code=400, detail="Name must be at least 2 characters.")
+        current_user.name = clean_name
+
+    # 2. Update & validate phone
+    if req.phone is not None:
+        clean_phone = "".join(filter(str.isdigit, req.phone.strip()))
+        if len(clean_phone) < 10:
+            raise HTTPException(status_code=400, detail="Mobile number must contain at least 10 digits.")
+        current_user.phone = clean_phone
+
+    # 3. Update & validate email (check uniqueness if modified)
+    if req.email is not None:
+        clean_email = req.email.strip().lower()
+        if clean_email != current_user.email:
+            existing = db.query(User).filter(User.email == clean_email, User.id != current_user.id).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="This email is already associated with another account.")
+            current_user.email = clean_email
+
+    # 4. Update FarmerProfile details
+    fp = current_user.farmer_profile
+    if not fp:
+        fp = FarmerProfile(user_id=current_user.id)
+        db.add(fp)
+
+    if req.address is not None:
+        fp.address = req.address.strip()
+    if req.village is not None:
+        fp.village = req.village.strip()
+    if req.district is not None:
+        fp.district = req.district.strip()
+    if req.land_size_acres is not None:
+        if req.land_size_acres <= 0:
+            raise HTTPException(status_code=400, detail="Land area must be greater than 0 acres.")
+        fp.land_size_acres = float(req.land_size_acres)
+    if req.bank_name is not None:
+        fp.bank_name = req.bank_name.strip()
+    if req.bank_account_no is not None:
+        fp.bank_account_no = req.bank_account_no.strip()
+    if req.ifsc_code is not None:
+        fp.ifsc_code = req.ifsc_code.strip().upper()
+
+    current_user.updated_at = datetime.now(IST).replace(tzinfo=None)
+    db.commit()
+    db.refresh(current_user)
+    if current_user.farmer_profile:
+        db.refresh(current_user.farmer_profile)
+
+    updated_fp = current_user.farmer_profile
+    return FarmerProfileOut(
+        id=current_user.id,
+        name=current_user.name,
+        email=current_user.email,
+        phone=current_user.phone,
+        role=current_user.role,
+        is_email_verified=current_user.is_email_verified,
+        address=updated_fp.address if updated_fp else None,
+        village=updated_fp.village if updated_fp else None,
+        district=updated_fp.district if updated_fp else None,
+        state=updated_fp.state if updated_fp else "Telangana",
+        land_size_acres=updated_fp.land_size_acres if updated_fp else 2.5,
+        bank_name=updated_fp.bank_name if updated_fp else None,
+        bank_account_no=updated_fp.bank_account_no if updated_fp else None,
+        ifsc_code=updated_fp.ifsc_code if updated_fp else None,
+        aadhaar_last4=updated_fp.aadhaar_last4 if updated_fp else None
+    )
+
 
