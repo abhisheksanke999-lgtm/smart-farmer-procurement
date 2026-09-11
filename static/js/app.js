@@ -863,22 +863,28 @@ function handleDealerFileUpload(event, docKey) {
   const sizeStr = sizeMB >= 1 ? `${sizeMB} MB` : `${Math.round(file.size / 1024)} KB`;
   const nowStr = new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'});
 
-  dealerUploadedDocs[docKey] = {
-    document_key: docKey,
-    document_name: def.name,
-    file_name: file.name,
-    file_type: file.type || "PDF Document",
-    file_size: sizeStr,
-    status: "UPLOADED",
-    uploaded_at: nowStr,
-    issuer: def.issuer
-  };
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const fileDataUrl = e.target.result;
+    dealerUploadedDocs[docKey] = {
+      document_key: docKey,
+      document_name: def.name,
+      file_name: file.name,
+      file_type: file.type || (file.name.match(/\.(png|jpg|jpeg|webp)$/i) ? 'image/jpeg' : 'application/pdf'),
+      file_size: sizeStr,
+      file_data: fileDataUrl,
+      status: "UPLOADED",
+      uploaded_at: nowStr,
+      issuer: def.issuer
+    };
 
-  const container = document.getElementById("dealer-docs-container");
-  if (container) {
-    container.innerHTML = renderDealerDocUploadCardsHtml();
-    if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
-  }
+    const container = document.getElementById("dealer-docs-container");
+    if (container) {
+      container.innerHTML = renderDealerDocUploadCardsHtml();
+      if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+    }
+  };
+  reader.readAsDataURL(file);
 }
 
 function removeDealerDoc(docKey) {

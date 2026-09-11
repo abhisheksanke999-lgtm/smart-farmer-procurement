@@ -14,7 +14,7 @@ connect_args = {}
 if db_url.startswith("sqlite"):
     connect_args["check_same_thread"] = False
 else:
-    connect_args["connect_timeout"] = 4
+    connect_args["connect_timeout"] = 15
 
 engine_kwargs = {
     "pool_pre_ping": True,

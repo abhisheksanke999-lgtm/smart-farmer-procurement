@@ -122,14 +122,15 @@ def get_dealers_for_centre(
         query = query.filter(DealerProfile.assigned_centre_id == centre_id)
 
     # Filter strictly by Category
-    if category_id:
-        query = query.filter(DealerProfile.category_id == category_id)
-    elif crop:
+    matched_cat_id = None
+    if crop:
         clean_crop = crop.strip().lower()
         cats = db.query(Category).all()
-        matched_cat_id = None
         for c in cats:
             c_name_lower = c.name.lower()
+            if c_name_lower == clean_crop:
+                matched_cat_id = c.id
+                break
             if c_name_lower in clean_crop or clean_crop in c_name_lower:
                 matched_cat_id = c.id
                 break
@@ -139,10 +140,31 @@ def get_dealers_for_centre(
             if "cotton" in clean_crop and "cotton" in c_name_lower:
                 matched_cat_id = c.id
                 break
-        if matched_cat_id:
-            query = query.filter(DealerProfile.category_id == matched_cat_id)
-        else:
-            return []
+            if ("maize" in clean_crop or "corn" in clean_crop) and ("maize" in c_name_lower or "corn" in c_name_lower):
+                matched_cat_id = c.id
+                break
+            if "wheat" in clean_crop and "wheat" in c_name_lower:
+                matched_cat_id = c.id
+                break
+            if "soya" in clean_crop and "soya" in c_name_lower:
+                matched_cat_id = c.id
+                break
+            if ("groundnut" in clean_crop or "peanut" in clean_crop) and ("groundnut" in c_name_lower or "peanut" in c_name_lower):
+                matched_cat_id = c.id
+                break
+            if ("tur" in clean_crop or "arhar" in clean_crop or "gram" in clean_crop) and ("tur" in c_name_lower or "arhar" in c_name_lower or "gram" in c_name_lower):
+                matched_cat_id = c.id
+                break
+            if "chilli" in clean_crop and "chilli" in c_name_lower:
+                matched_cat_id = c.id
+                break
+
+    if matched_cat_id:
+        query = query.filter(DealerProfile.category_id == matched_cat_id)
+    elif category_id:
+        query = query.filter(DealerProfile.category_id == category_id)
+    elif crop:
+        return []
 
     dealers = (
         query
@@ -1109,6 +1131,8 @@ def update_farmer_profile(
         fp.village = req.village.strip()
     if req.district is not None:
         fp.district = req.district.strip()
+    if req.state is not None:
+        fp.state = req.state.strip()
     if req.land_size_acres is not None:
         if req.land_size_acres <= 0:
             raise HTTPException(status_code=400, detail="Land area must be greater than 0 acres.")

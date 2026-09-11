@@ -1718,7 +1718,7 @@ function closeAdminDocModal() {
 
 function renderAdminDocModalHtml() {
   if (!adminActiveDocModal) return "";
-  const { dealerName, ownerName, doc } = adminActiveDocModal;
+  const { dealerId, dealerName, ownerName, docKey, doc } = adminActiveDocModal;
 
   const docIcons = {
     aadhaar_card: '🪪',
@@ -1776,20 +1776,99 @@ function renderAdminDocModalHtml() {
           </div>
 
           <!-- Document Preview Canvas -->
-          <div class="p-6 rounded-2xl bg-slate-100 dark:bg-slate-950 border-2 border-dashed border-slate-300 dark:border-slate-800 flex flex-col items-center justify-center text-center space-y-3 min-h-[220px]">
-            <div class="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-2xl font-black shadow-inner">
-              ${icon}
+          ${(doc.file_data || doc.url) ? `
+            <div class="space-y-3">
+              <div class="flex items-center justify-between px-1">
+                <span class="text-slate-700 dark:text-slate-300 font-extrabold text-xs flex items-center gap-1.5">
+                  <i data-lucide="eye" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
+                  ${(doc.file_data && doc.file_data.startsWith('data:application/pdf')) || (doc.file_name && doc.file_name.toLowerCase().endsWith('.pdf')) ? 'PDF Document Viewer' : 'Uploaded Document Preview'}
+                </span>
+                <div class="flex items-center gap-2">
+                  <a href="${doc.file_data || doc.url}" target="_blank" download="${escapeHtml(doc.file_name || 'document')}" class="px-3 py-1.5 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 rounded-xl font-bold text-xs flex items-center gap-1 border border-emerald-300 dark:border-emerald-800 transition">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i> Download
+                  </a>
+                  <a href="${doc.file_data || doc.url}" target="_blank" class="px-3 py-1.5 bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 rounded-xl font-bold text-xs flex items-center gap-1 border border-slate-300 dark:border-slate-700 transition">
+                    <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Open Full Size
+                  </a>
+                </div>
+              </div>
+
+              ${(doc.file_data && doc.file_data.startsWith('data:application/pdf')) || (doc.file_name && doc.file_name.toLowerCase().endsWith('.pdf')) ? `
+                <div class="w-full h-[440px] rounded-2xl overflow-hidden border-2 border-slate-300 dark:border-slate-700 bg-slate-950 shadow-2xl">
+                  <iframe src="${doc.file_data || doc.url}" class="w-full h-full border-0"></iframe>
+                </div>
+              ` : `
+                <div class="w-full rounded-2xl bg-slate-950 p-2.5 border-2 border-emerald-500/30 flex items-center justify-center overflow-hidden max-h-[460px] shadow-2xl relative group">
+                  <img src="${doc.file_data || doc.url}" alt="${escapeHtml(doc.document_name)}" class="max-h-[440px] w-auto max-w-full object-contain rounded-xl shadow-md cursor-zoom-in transition group-hover:scale-[1.01]" onclick="window.open(this.src, '_blank')">
+                  <div class="absolute bottom-4 right-4 bg-black/75 backdrop-blur-md text-white px-3 py-1 rounded-lg text-[10px] font-mono pointer-events-none opacity-0 group-hover:opacity-100 transition">
+                    Click image to open in full screen
+                  </div>
+                </div>
+              `}
+
+              <div class="flex items-center justify-between pt-1">
+                <span class="text-[11px] text-emerald-700 dark:text-emerald-400 font-bold flex items-center gap-1">
+                  <i data-lucide="check-circle" class="w-3.5 h-3.5"></i> High-Resolution Original Dossier Attached
+                </span>
+                <label class="cursor-pointer text-[11px] text-slate-500 hover:text-emerald-600 dark:text-slate-400 font-bold flex items-center gap-1">
+                  <i data-lucide="refresh-cw" class="w-3 h-3"></i> Replace / Re-upload Image
+                  <input type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" onchange="handleAdminAttachDocFile(event, ${dealerId}, '${docKey}')" class="hidden">
+                </label>
+              </div>
             </div>
-            <div>
-              <h4 class="font-black text-slate-900 dark:text-white text-base">${escapeHtml(doc.document_name)}</h4>
-              <p class="text-xs text-slate-500 font-mono mt-0.5">Reference / Doc No: ${escapeHtml(doc.document_number || 'DOC-REG-2026-VERIFIED')}</p>
-              <p class="text-[11px] text-slate-400 mt-1">Issuing Authority: <strong class="text-slate-700 dark:text-slate-300">${escapeHtml(doc.issuer || 'Government Regulatory Authority')}</strong></p>
+          ` : `
+            <div class="rounded-2xl border-2 border-emerald-500/40 bg-gradient-to-br from-amber-50/90 via-white to-emerald-50/40 dark:from-slate-900 dark:via-slate-850 dark:to-emerald-950/30 p-5 sm:p-6 shadow-xl relative overflow-hidden space-y-4">
+              <!-- Watermark Stamp -->
+              <div class="absolute -right-6 -bottom-6 opacity-5 pointer-events-none text-9xl">🏛️</div>
+              
+              <div class="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 dark:border-slate-700 pb-3">
+                <div class="flex items-center gap-3">
+                  <div class="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-2xl font-black shadow-inner">
+                    ${icon}
+                  </div>
+                  <div>
+                    <h4 class="font-black text-slate-900 dark:text-white text-base sm:text-lg">${escapeHtml(doc.document_name)}</h4>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">Government Regulatory &amp; Mandi Verification Records</p>
+                  </div>
+                </div>
+                <span class="px-3 py-1 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 rounded-full font-black text-[10px] tracking-wider uppercase flex items-center gap-1">
+                  <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> Registration Certified
+                </span>
+              </div>
+
+              <!-- Official Record Grid -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div class="p-3 bg-white/90 dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <span class="text-slate-400 font-bold uppercase text-[10px] block">Document / License ID</span>
+                  <span class="font-black text-xs sm:text-sm text-slate-900 dark:text-white font-mono">${escapeHtml(doc.document_number || 'Ltc-1002')}</span>
+                </div>
+                <div class="p-3 bg-white/90 dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <span class="text-slate-400 font-bold uppercase text-[10px] block">Issuing Authority</span>
+                  <span class="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200">${escapeHtml(doc.issuer || 'APMC Authority')}</span>
+                </div>
+                <div class="p-3 bg-white/90 dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <span class="text-slate-400 font-bold uppercase text-[10px] block">Registered Business</span>
+                  <span class="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200">${escapeHtml(dealerName)} (${escapeHtml(ownerName)})</span>
+                </div>
+                <div class="p-3 bg-white/90 dark:bg-slate-800/90 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <span class="text-slate-400 font-bold uppercase text-[10px] block">Uploaded Submission File</span>
+                  <span class="font-mono font-bold text-emerald-700 dark:text-emerald-400 truncate block">${escapeHtml(doc.file_name)} (${escapeHtml(doc.file_size || '4.0 MB')})</span>
+                </div>
+              </div>
+
+              <!-- Live File Attachment Action -->
+              <div class="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-200/80 dark:border-slate-700/80">
+                <span class="text-[11px] text-slate-500 dark:text-slate-400 text-center sm:text-left font-medium">
+                  Select your original image / PDF file to display it in high-resolution directly on this screen:
+                </span>
+                <label class="cursor-pointer px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs flex items-center gap-2 shadow-lg hover:scale-105 active:scale-95 transition-all shrink-0">
+                  <i data-lucide="upload" class="w-4 h-4"></i>
+                  <span>Attach / Upload File to View</span>
+                  <input type="file" accept=".png,.jpg,.jpeg,.webp,.pdf" onchange="handleAdminAttachDocFile(event, ${dealerId}, '${docKey}')" class="hidden">
+                </label>
+              </div>
             </div>
-            <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 rounded-full font-bold text-[11px]">
-              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
-              <span>Official Government APMC Mandi Regulatory Document Preview</span>
-            </div>
-          </div>
+          `}
 
         </div>
 
@@ -1804,6 +1883,56 @@ function renderAdminDocModalHtml() {
       </div>
     </div>
   `;
+}
+
+async function handleAdminAttachDocFile(event, dealerId, docKey) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+  const sizeStr = sizeMB >= 1 ? `${sizeMB} MB` : `${Math.round(file.size / 1024)} KB`;
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const fileDataUrl = e.target.result;
+    
+    try {
+      const res = await api.uploadAdminDealerDoc(dealerId, {
+        document_key: docKey,
+        file_name: file.name,
+        file_size: sizeStr,
+        file_data: fileDataUrl
+      });
+
+      // Update in memory state
+      if (adminActiveDocModal && adminActiveDocModal.doc) {
+        adminActiveDocModal.doc.file_name = file.name;
+        adminActiveDocModal.doc.file_size = sizeStr;
+        adminActiveDocModal.doc.file_data = fileDataUrl;
+      }
+      if (adminActiveDealerDetail && adminActiveDealerDetail.dealer && adminActiveDealerDetail.dealer.verification_documents) {
+        adminActiveDealerDetail.dealer.verification_documents[docKey] = res.document || {
+          document_key: docKey,
+          file_name: file.name,
+          file_size: sizeStr,
+          file_data: fileDataUrl,
+          status: "UPLOADED"
+        };
+      }
+
+      renderApp();
+      if (typeof showNotificationToast === 'function') {
+        showNotificationToast({
+          title: "Document Uploaded ✓",
+          message: `Successfully attached ${file.name} to dealer dossier.`,
+          type: "system"
+        });
+      }
+    } catch (err) {
+      alert("Failed to upload document: " + err.message);
+    }
+  };
+  reader.readAsDataURL(file);
 }
 
 // -------------------------------------------------------------

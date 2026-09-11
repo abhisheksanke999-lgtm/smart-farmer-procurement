@@ -159,6 +159,7 @@ class FarmerProfileUpdate(BaseModel):
     address: Optional[str] = None
     village: Optional[str] = None
     district: Optional[str] = None
+    state: Optional[str] = None
     land_size_acres: Optional[float] = None
     bank_name: Optional[str] = None
     bank_account_no: Optional[str] = None
@@ -223,6 +224,15 @@ class DealerProfileOut(BaseModel):
     is_email_verified: bool = True
     rejection_reason: Optional[str] = None
     verification_documents: Optional[dict] = None
+
+class DealerDocUploadRequest(BaseModel):
+    document_key: str
+    file_name: str
+    file_data: str
+    file_size: Optional[str] = "1.2 MB"
+    issuer: Optional[str] = None
+    document_number: Optional[str] = None
+
 
 
 

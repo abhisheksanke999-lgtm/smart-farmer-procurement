@@ -438,6 +438,13 @@ class ApiClient {
     });
   }
 
+  async uploadAdminDealerDoc(dealerId, docData) {
+    return await this.request(`/admin/dealers/${dealerId}/documents`, {
+      method: "PUT",
+      body: JSON.stringify(docData)
+    });
+  }
+
   async getFarmers() {
     return await this.request("/admin/farmers");
   }

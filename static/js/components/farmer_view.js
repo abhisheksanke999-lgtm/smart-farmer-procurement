@@ -1110,6 +1110,61 @@ async function renderFarmerActiveBookingCard() {
   }
 }
 
+function resolveCategoryIdForCrop(cropName) {
+  if (!cropName) return 1;
+  const clean = cropName.trim().toLowerCase();
+  if (Array.isArray(cachedCategories) && cachedCategories.length > 0) {
+    const exact = cachedCategories.find(c => c.name.toLowerCase() === clean);
+    if (exact) return exact.id;
+
+    if (clean.includes("paddy") || clean.includes("rice")) {
+      const paddyCat = cachedCategories.find(c => {
+        const cn = c.name.toLowerCase();
+        return cn.includes("paddy") || cn.includes("rice");
+      });
+      if (paddyCat) return paddyCat.id;
+    }
+    if (clean.includes("cotton")) {
+      const cottonCat = cachedCategories.find(c => c.name.toLowerCase().includes("cotton"));
+      if (cottonCat) return cottonCat.id;
+    }
+    if (clean.includes("maize") || clean.includes("corn")) {
+      const maizeCat = cachedCategories.find(c => c.name.toLowerCase().includes("maize") || c.name.toLowerCase().includes("corn"));
+      if (maizeCat) return maizeCat.id;
+    }
+    if (clean.includes("wheat")) {
+      const wheatCat = cachedCategories.find(c => c.name.toLowerCase().includes("wheat"));
+      if (wheatCat) return wheatCat.id;
+    }
+    if (clean.includes("soyabean") || clean.includes("soya")) {
+      const soyaCat = cachedCategories.find(c => c.name.toLowerCase().includes("soya"));
+      if (soyaCat) return soyaCat.id;
+    }
+    if (clean.includes("groundnut") || clean.includes("peanut")) {
+      const gCat = cachedCategories.find(c => c.name.toLowerCase().includes("groundnut"));
+      if (gCat) return gCat.id;
+    }
+    if (clean.includes("tur") || clean.includes("arhar") || clean.includes("gram")) {
+      const turCat = cachedCategories.find(c => c.name.toLowerCase().includes("tur") || c.name.toLowerCase().includes("arhar") || c.name.toLowerCase().includes("gram"));
+      if (turCat) return turCat.id;
+    }
+    if (clean.includes("chilli") || clean.includes("chili")) {
+      const chilliCat = cachedCategories.find(c => c.name.toLowerCase().includes("chilli") || c.name.toLowerCase().includes("chili"));
+      if (chilliCat) return chilliCat.id;
+    }
+
+    const partial = cachedCategories.find(c => clean.includes(c.name.toLowerCase()) || c.name.toLowerCase().includes(clean));
+    if (partial) return partial.id;
+  }
+
+  if (clean.includes("cotton")) return 2;
+  if (clean.includes("maize") || clean.includes("corn")) return 3;
+  if (clean.includes("wheat")) return 6;
+  if (clean.includes("soya")) return 9;
+  if (clean.includes("groundnut")) return 11;
+  return 1;
+}
+
 async function renderSlotBookingWizard() {
   try {
     const todayIST = getTodayIST();
@@ -1139,13 +1194,17 @@ async function renderSlotBookingWizard() {
     }
 
     if (!selectedCrop) {
-      selectedCrop = "Paddy (Fine / Grade A)";
-      selectedCategoryId = 1;
+      if (cachedCategories && cachedCategories.length > 0) {
+        selectedCrop = cachedCategories[0].name;
+      } else {
+        selectedCrop = "Paddy";
+      }
     }
+    selectedCategoryId = resolveCategoryIdForCrop(selectedCrop);
 
     // Default to first centre if not set
-    if (!selectedCentreId && Array.isArray(cachedCentres) && cachedCentres.length > 0) {
-      selectedCentreId = cachedCentres[0].id;
+    if (!selectedCentreId && Array.isArray(allCachedCentres) && allCachedCentres.length > 0) {
+      selectedCentreId = allCachedCentres[0].id;
     }
 
     // Preload dealers if centre is already selected
@@ -1226,11 +1285,17 @@ async function renderSlotBookingWizard() {
                 2. Select Crop / Produce <span class="text-rose-500">*</span>
               </label>
               <select id="booking-crop-select" onchange="handleCropSelection(this.value)" required class="w-full px-4 py-3.5 sm:py-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-base font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition cursor-pointer shadow-sm">
-                <option value="Paddy (Fine / Grade A)" ${selectedCrop.includes('Fine') ? 'selected' : ''}>Paddy (Fine / Grade A)</option>
-                <option value="Paddy (Common)" ${selectedCrop === 'Paddy (Common)' ? 'selected' : ''}>Paddy (Common)</option>
-                <option value="Cotton" ${selectedCrop === 'Cotton' ? 'selected' : ''}>Cotton</option>
-                <option value="Maize" ${selectedCrop === 'Maize' ? 'selected' : ''}>Maize</option>
-                <option value="Chilli" ${selectedCrop === 'Chilli' ? 'selected' : ''}>Chilli</option>
+                ${(cachedCategories && cachedCategories.length > 0) ? cachedCategories.map(cat => `
+                  <option value="${escapeHtml(cat.name)}" ${selectedCrop === cat.name ? 'selected' : ''}>🌾 ${escapeHtml(cat.name)}</option>
+                `).join('') : `
+                  <option value="Paddy">Paddy</option>
+                  <option value="Cotton">Cotton</option>
+                  <option value="Maize">Maize</option>
+                  <option value="Wheat">Wheat</option>
+                  <option value="Soyabean (Yellow)">Soyabean (Yellow)</option>
+                  <option value="Groundnut">Groundnut</option>
+                  <option value="Chilli">Chilli</option>
+                `}
               </select>
             </div>
 
@@ -1412,6 +1477,8 @@ function renderDealerSectionHtml() {
 async function handleCentreSelection(centreId) {
   selectedCentreId = centreId ? parseInt(centreId, 10) : null;
   selectedSlotId = null;
+  selectedDealerId = null;
+  selectedCategoryId = resolveCategoryIdForCrop(selectedCrop);
 
   const btn = document.getElementById("btn-confirm-assignment");
   if (btn) {
@@ -1470,8 +1537,9 @@ async function handleCentreSelection(centreId) {
 
 async function handleCropSelection(cropVal) {
   selectedCrop = cropVal;
-  selectedCategoryId = cropVal.toLowerCase().includes('cotton') ? 2 : 1;
+  selectedCategoryId = resolveCategoryIdForCrop(cropVal);
   selectedSlotId = null;
+  selectedDealerId = null;
 
   const btn = document.getElementById("btn-confirm-assignment");
   if (btn) {
@@ -1490,6 +1558,14 @@ async function handleCropSelection(cropVal) {
         if (window.lucide) lucide.createIcons();
       }
     } else {
+      if (dealersContainer) {
+        dealersContainer.innerHTML = `
+          <div class="text-sm text-slate-400 py-2 flex items-center gap-2">
+            <div class="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+            <span>Loading authorized dealers...</span>
+          </div>
+        `;
+      }
       try {
         const res = await api.getDealersByCentre(selectedCentreId, selectedCrop, selectedCategoryId);
         cachedDealers = Array.isArray(res) ? res : [];
@@ -2258,7 +2334,7 @@ async function renderFarmerProfilePage() {
             ` : ''}
           </div>
           <p class="text-sm sm:text-base text-emerald-50 font-medium">
-            🌾 Registered Agricultural Producer • ${escapeHtml(profile.district ? profile.district + ', ' : '')}Telangana
+            🌾 Registered Agricultural Producer • ${escapeHtml(profile.district ? profile.district + ', ' : '')}${escapeHtml(profile.state || 'Telangana')}
           </p>
           <div class="inline-flex items-center gap-2 bg-black/25 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/20 text-xs sm:text-sm text-emerald-100 font-mono font-bold shadow-inner">
             <span>Farmer ID: <strong class="text-amber-300">#FAR-${profile.id}</strong></span>
@@ -2349,10 +2425,10 @@ async function renderFarmerProfilePage() {
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-5">
               
-              <!-- State (Read-only) -->
+              <!-- State (Editable) -->
               <div>
-                <label class="block text-xs sm:text-sm font-bold text-slate-500 dark:text-slate-400 mb-1.5">State</label>
-                <input type="text" value="${escapeHtml(profile.state || 'Telangana')}" disabled class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 text-sm sm:text-base font-bold cursor-not-allowed">
+                <label class="block text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 mb-1.5">State *</label>
+                <input type="text" id="fp-state" required value="${escapeHtml(profile.state || 'Telangana')}" placeholder="Telangana / Andhra Pradesh / etc." class="w-full px-4 py-3 rounded-xl border-2 border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white text-sm sm:text-base font-semibold focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 focus:outline-none transition">
               </div>
 
               <!-- District -->
@@ -2438,6 +2514,7 @@ async function handleSaveFarmerProfile(e) {
   const phone = document.getElementById("fp-phone")?.value.trim();
   const email = document.getElementById("fp-email")?.value.trim();
   const district = document.getElementById("fp-district")?.value.trim();
+  const stateVal = document.getElementById("fp-state")?.value.trim() || "Telangana";
   const village = document.getElementById("fp-village")?.value.trim();
   const address = document.getElementById("fp-address")?.value.trim();
   const landSize = parseFloat(document.getElementById("fp-land")?.value || 2.5);
@@ -2478,6 +2555,7 @@ async function handleSaveFarmerProfile(e) {
       address,
       village,
       district,
+      state: stateVal,
       land_size_acres: landSize,
       bank_name: bankName,
       bank_account_no: bankAcc,
@@ -2495,6 +2573,7 @@ async function handleSaveFarmerProfile(e) {
       state.currentUser.farmer_profile.address = updated.address;
       state.currentUser.farmer_profile.village = updated.village;
       state.currentUser.farmer_profile.district = updated.district;
+      state.currentUser.farmer_profile.state = updated.state;
       state.currentUser.farmer_profile.land_size_acres = updated.land_size_acres;
       state.currentUser.farmer_profile.bank_name = updated.bank_name;
       state.currentUser.farmer_profile.bank_account_no = updated.bank_account_no;

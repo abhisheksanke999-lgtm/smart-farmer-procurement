@@ -812,3 +812,37 @@ def get_dealer_live_queue(
     }
 
 
+@router.get("/centres")
+def get_dealer_centres(db: Session = Depends(get_db)):
+    """Returns active procurement centres created by the admin for dealer profile selection."""
+    centres = db.query(ProcurementCentre).filter(ProcurementCentre.is_active == True).order_by(ProcurementCentre.name.asc()).all()
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "code": c.code,
+            "district": c.district or c.location,
+            "location": c.location,
+            "daily_capacity": c.daily_capacity,
+            "supported_crops": c.supported_crops
+        }
+        for c in centres
+    ]
+
+
+@router.get("/categories")
+def get_dealer_categories(db: Session = Depends(get_db)):
+    """Returns active crop categories / commodities created by the admin for dealer profile selection."""
+    cats = db.query(Category).filter(Category.status == "ACTIVE").order_by(Category.id.asc()).all()
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "description": c.description,
+            "status": c.status
+        }
+        for c in cats
+    ]
+
+
+

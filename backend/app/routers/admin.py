@@ -11,7 +11,7 @@ from ..models import (
     Booking, BookingStatus, QueueEntry, QueueStatus, ProcurementTransaction, Payment, PaymentStatus,
     Notification, NotificationType, AuditLog, Complaint, FarmerDealerAssignment, AssignmentStatus, MSPRate, Category
 )
-from ..schemas import DealerStatusUpdate, FarmerStatusUpdate, ProcurementCentreCreate, ComplaintResponse, MSPRateCreate, MSPRateUpdate
+from ..schemas import DealerStatusUpdate, FarmerStatusUpdate, ProcurementCentreCreate, ComplaintResponse, MSPRateCreate, MSPRateUpdate, DealerDocUploadRequest
 from ..auth import require_admin
 from .auth import generate_default_dealer_docs
 from ..slot_timing import get_now_ist
@@ -287,6 +287,51 @@ def get_dealer_details(dealer_id: int, current_user: User = Depends(require_admi
             "completed_transactions_count": len(all_txns)
         },
         "completed_transactions": completed_txns_data
+    }
+
+@router.put("/dealers/{dealer_id}/documents")
+def update_dealer_document(
+    dealer_id: int,
+    req: DealerDocUploadRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    d = db.query(DealerProfile).filter(DealerProfile.id == dealer_id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Dealer profile not found")
+    
+    docs_dict = {}
+    if d.verification_documents_url:
+        try:
+            docs_dict = json.loads(d.verification_documents_url)
+        except Exception:
+            docs_dict = {}
+    if not docs_dict:
+        docs_dict = generate_default_dealer_docs(d.business_name, d.government_id_number, d.license_number)
+    
+    now_str = get_now_ist().strftime("%d-%b-%Y %I:%M %p")
+    doc_info = docs_dict.get(req.document_key, {})
+    doc_info.update({
+        "document_key": req.document_key,
+        "document_name": doc_info.get("document_name", req.document_key.replace('_', ' ').title()),
+        "file_name": req.file_name,
+        "file_type": "Image Document" if req.file_name.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) else "PDF Document",
+        "file_size": req.file_size,
+        "file_data": req.file_data,
+        "status": "UPLOADED",
+        "uploaded_at": now_str,
+        "issuer": req.issuer or doc_info.get("issuer", "Government Official Authority"),
+        "document_number": req.document_number or doc_info.get("document_number", f"DOC-{secrets.randbelow(9000)+1000}")
+    })
+    docs_dict[req.document_key] = doc_info
+    d.verification_documents_url = json.dumps(docs_dict)
+    db.commit()
+    
+    return {
+        "status": "SUCCESS",
+        "message": f"Document '{doc_info['document_name']}' updated successfully.",
+        "document": doc_info,
+        "all_documents": docs_dict
     }
 
 @router.post("/update-dealer-status")
